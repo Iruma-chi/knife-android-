@@ -44,7 +44,7 @@ jobs:
 
       - name: Build Rust NativeActivity library
         working-directory: engine
-        run: cargo +1.99.0 ndk -t arm64-v8a -o ../app/src/main/jniLibs build --release -p knife --lib
+        run: CARGO_NDK_PLATFORM=31 cargo +1.99.0 ndk -t arm64-v8a -o ../app/src/main/jniLibs build --release -p knife --lib
 
       - name: Build debug APK
         run: chmod +x ./gradlew && ./gradlew :app:assembleDebug
