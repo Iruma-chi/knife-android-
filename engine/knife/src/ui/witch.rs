@@ -226,6 +226,18 @@ impl WIn {
         self.finger.filter(|_| !self.released).map(|f| [self.pos[0] - f.start[0], self.pos[1] - f.start[1]])
     }
 
+    /// Mark a held touch as a drag using a screen-specific movement threshold.
+    /// The backlog uses a shorter threshold than ordinary story/menu taps so a
+    /// deliberate list scroll cannot become an entry-selection tap on release.
+    pub fn mark_drag_if_moved(&mut self, min_distance: f32) {
+        if let Some(f) = &mut self.finger {
+            let distance = (self.pos[0] - f.start[0]).abs() + (self.pos[1] - f.start[1]).abs();
+            if distance >= min_distance {
+                f.moved = true;
+            }
+        }
+    }
+
     /// The start of a 60 Hz frame (jp_AD4E0): this frame's touch flags.
     pub fn begin(&mut self) {
         self.touch = 0;
@@ -492,6 +504,9 @@ impl Ui {
     pub(super) fn witch_mouse_move(&mut self) {
         let (x, y) = self.witch_units();
         self.w.inp.touch_move(x, y);
+        if self.w.scr == WScr::Backlog {
+            self.w.inp.mark_drag_if_moved(6.0);
+        }
     }
 
     pub(super) fn witch_mouse_up(&mut self) {

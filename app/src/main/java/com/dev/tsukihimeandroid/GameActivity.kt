@@ -169,10 +169,12 @@ class GameActivity : AndroidGameActivity() {
     private fun makeButton(label: String, settings: Boolean = false) = TextView(this).apply {
         text = label
         contentDescription = label
-        textSize = if (settings) 20f else 9f
-        setTextColor(0xFFF0E7D7.toInt())
+        textSize = if (settings) 20f else 9.5f
+        setTextColor(0xFFF1E7D2.toInt())
         typeface = Typeface.create("serif", Typeface.BOLD)
-        letterSpacing = if (settings) 0f else 0.08f
+        letterSpacing = if (settings) 0f else 0.11f
+        setShadowLayer(if (settings) 0f else dp(2f), 0f, dp(1f), 0xAA000000.toInt())
+        setPadding(dp(3), 0, dp(3), 0)
         gravity = Gravity.CENTER
         maxLines = 1
         isClickable = true
@@ -183,22 +185,30 @@ class GameActivity : AndroidGameActivity() {
         alpha = prefs.getInt("opacity", 76).coerceIn(20, 100) / 100f
     }
 
-    /** Restrained moonlit-oxblood glass: ink-dark fill, warm ivory lettering and a muted silver-gold edge. */
+    /** Gothic moonlit-glass treatment: ink-black wine tones, restrained crimson, ivory and antique silver. */
     private fun controlButtonDrawable(round: Boolean = false) = StateListDrawable().apply {
-        fun shape(top: Int, bottom: Int, stroke: Int) = GradientDrawable(
+        fun shape(top: Int, bottom: Int, edge: Int) = GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(top, bottom)
         ).apply {
             shape = if (round) GradientDrawable.OVAL else GradientDrawable.RECTANGLE
-            cornerRadius = dp(if (round) 24 else 8).toFloat()
-            setStroke(dp(1), stroke)
+            if (round) {
+                cornerRadius = dp(24).toFloat()
+            } else {
+                setCornerRadii(floatArrayOf(
+                    dp(3f), dp(3f), dp(9f), dp(3f),
+                    dp(3f), dp(3f), dp(3f), dp(9f)
+                ))
+            }
+            setStroke(dp(1), edge)
+            setPadding(dp(2), dp(1), dp(2), dp(1))
         }
         addState(
             intArrayOf(android.R.attr.state_pressed),
-            shape(0xF06A2638.toInt(), 0xF01B101B.toInt(), 0xFFE0C18C.toInt())
+            shape(0xF05A2636.toInt(), 0xF01B1018.toInt(), 0xFFE2C99A.toInt())
         )
         addState(
             intArrayOf(),
-            shape(0xD92A202B.toInt(), 0xE60C1018.toInt(), 0x99C7B99B.toInt())
+            shape(0xE52A2028.toInt(), 0xE5090C12.toInt(), 0xB8B7A58C.toInt())
         )
     }
 
