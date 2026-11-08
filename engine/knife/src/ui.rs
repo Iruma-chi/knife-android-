@@ -375,6 +375,8 @@ pub struct Ui {
     pub rstick: i32,
     /// drawing the screen below a dialog / viewer (no guide or popup)
     under: bool,
+    /// Android Controls setting: enable the game's optional swipe/flick navigation gestures.
+    android_gestures_enabled: bool,
     last_track: Option<usize>,
     /// SYSMES_TEXT strings (music titles), loaded on first use
     sysmes: Vec<String>,
@@ -1143,6 +1145,7 @@ impl Ui {
             cg_rt: None,
             rstick: 0,
             under: false,
+            android_gestures_enabled: true,
             last_track: None,
             sysmes: Vec::new(),
             sels_slot: None,

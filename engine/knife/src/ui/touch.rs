@@ -342,7 +342,7 @@ impl Ui {
         }
         self.touch.visible = 256.0;
         // CG viewer (sub_C56C): a held touch moves the picture twice as far as the finger
-        if matches!(self.screen, Screen::CgView { .. }) && !self.busy() {
+        if self.android_gestures_enabled && matches!(self.screen, Screen::CgView { .. }) && !self.busy() {
             let [x, y] = self.units();
             let [ax, ay] = self.touch.at;
             self.cg_pan[0] += 2.0 * (x - ax) * UX;
@@ -356,6 +356,11 @@ impl Ui {
                 self.touch.dragged = true;
             }
         }
+    }
+
+    /// Set the Android Controls preference for optional swipe/flick navigation.
+    pub fn android_set_gestures_enabled(&mut self, enabled: bool) {
+        self.android_gestures_enabled = enabled;
     }
 
     /// Left button down: a ripple everywhere past the launch logos. In the story the tap acts on release, as
@@ -462,11 +467,12 @@ impl Ui {
             return;
         }
         if matches!(self.screen, Screen::CgView { .. }) {
-            self.cg_flick(game, start);
+            if self.android_gestures_enabled { self.cg_flick(game, start); }
             return;
         }
         // sub_4CEA0: a left or up swipe (+0x54 bits 1 / 4) closes the system menu like B
         if self.screen == Screen::Menu && self.touch.dragged && !self.busy() {
+            if !self.android_gestures_enabled { return; }
             let [dx, dy] = self.touch.trail.flick(start, self.units());
             let horiz = dx.abs() > dy.abs();
             if (horiz && dx <= -7.0) || (!horiz && dy <= -7.0) {
@@ -486,7 +492,7 @@ impl Ui {
             return;
         }
         if self.touch.dragged {
-            self.flick(game, r, start, [x, y]);
+            if self.android_gestures_enabled { self.flick(game, r, start, [x, y]); }
             return;
         }
         if swallow {
@@ -730,6 +736,34 @@ impl Ui {
         self.touch.pflags[0] = !game.can_prev_scene();
     }
 
+    /// Open the original game's configuration screen from the Android mini-menu.
+    pub fn android_open_config(&mut self, game: &mut Game, r: &Renderer) {
+        if matches!(self.screen, Screen::Game | Screen::Title) && self.popup.is_none() && !self.busy() {
+            self.act(game, r, super::Action::OpenConfig);
+        }
+    }
+
+    /// Return to the original game's title screen from the Android mini-menu.
+    pub fn android_return_to_title(&mut self, game: &mut Game, r: &Renderer) {
+        if self.screen == Screen::Game && self.popup.is_none() && !self.busy() {
+            self.act(game, r, super::Action::ToTitle);
+        }
+    }
+
+    /// Open the original save screen from the Android mini-menu.
+    pub fn android_open_save(&mut self, game: &mut Game, r: &Renderer) {
+        if matches!(self.screen, Screen::Game | Screen::Title) && self.popup.is_none() && !self.busy() {
+            self.act(game, r, super::Action::OpenSave);
+        }
+    }
+
+    /// Open the original load screen from the Android mini-menu.
+    pub fn android_open_load(&mut self, game: &mut Game, r: &Renderer) {
+        if matches!(self.screen, Screen::Game | Screen::Title) && self.popup.is_none() && !self.busy() {
+            self.act(game, r, super::Action::OpenLoad);
+        }
+    }
+
     /// A tapped mode panel button (sub_4E170 state 3 cases 0..7; 1 and 3 act while held, see `touch_update`).
     pub(super) fn panel_press(&mut self, game: &mut Game, r: &Renderer, b: usize) {
         if crate::assets::witch() {
@@ -907,7 +941,8 @@ impl Ui {
         // Witch on the Holy Night's jp_40ED0 has no such gesture: the stretch its TeaTime menu, choices and
         // mode display read (dword_64987C) and the arrow's alpha (AE0600, only zeroed by jp_3B5C0) stay 0
         let mut speed = 0i32;
-        let arrow_on = in_game
+        let arrow_on = self.android_gestures_enabled
+            && in_game
             && !crate::assets::witch()
             && self.touch.panel == Panel::Closed
             && self.touch.press.is_some_and(|p| (121.0..=519.0).contains(&p[0]) && (125.0..=383.0).contains(&p[1]));
@@ -1114,7 +1149,7 @@ impl Ui {
             Panel::Closed => {
                 // state 1 sets the button request (HIDWORD(qword_B35A14) = 1) however it opens, so a panel
                 // opened by touch also starts on its last button and takes the pad
-                if panel_game && !self.touch.hidden && self.touch.visible > 0.0 && y < 25.0 {
+                if self.android_gestures_enabled && panel_game && !self.touch.hidden && self.touch.visible > 0.0 && y < 25.0 {
                     self.touch.panel = Panel::Opening;
                     self.touch.panel_key = Some(self.touch.panel_last);
                 }

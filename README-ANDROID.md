@@ -1,4 +1,4 @@
-# Tsukihime Android 0.1.2 (development)
+# Tsukihime Android 0.1.3 (development)
 
 ## Game data: no-copy mode
 
@@ -10,7 +10,7 @@ The app expects the selected folder itself to be named `assets`, or to contain a
 
 ## Videos
 
-The upstream desktop backends are VideoToolbox (macOS), Media Foundation (Windows), and GStreamer (other desktop platforms). The Android-specific decoder in this source package is still a placeholder that returns “not implemented”. Excluding GStreamer from Android does **not** mean the video feature is implemented. Android MediaCodec must be implemented against the existing `FrameDecoder` interface before story movies/title movies can play.
+The upstream desktop backends are VideoToolbox (macOS), Media Foundation (Windows), and GStreamer (other desktop platforms). Android uses the NDK MediaCodec backend in `engine/knife/src/movie/android.rs`; actual movie playback still needs device coverage across supported Android codec implementations.
 
 ## Saves
 
@@ -18,4 +18,10 @@ The upstream engine implements Switch-format `savedata000` with 100 manual save 
 
 ## Current status
 
-This is an Android launcher/storage preparation build. It does not yet contain a working Rust NativeActivity integration, Android MediaCodec decoder, or playable engine. Do not treat a successful launcher APK build as proof of gameplay support.
+Build #16 successfully packages the Rust ARM64 engine and has been installed by the user; the user confirmed the game launches, renders and accepts touch input. The controls patch described below is a separate, not-yet-built source update.
+
+## Android virtual controls
+
+The controls patch migrates the existing NativeActivity host to AndroidX GameActivity. It uses Winit 0.30.13's `android-game-activity` backend and `androidx.games:games-activity:4.4.0`. GameActivity hosts the Rust renderer in a `SurfaceView`, allowing the Kotlin controls overlay and its Controls settings dialog to render above the game without replacing Winit's input path. The controls call a small JNI bridge that queues typed actions through Winit's `EventLoopProxy`; Knife handles them on its game thread using its existing Pad, quick-save/load and menu actions. The overlay does not synthesize keyboard events or touch game state from the Android UI thread.
+
+See `ANDROID-CONTROLS-IMPLEMENTATION.md` for the control map, settings and validation status. The source patch still requires the project's GitHub Actions ARM64 build and device testing before it can be treated as a release APK.

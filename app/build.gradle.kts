@@ -136,6 +136,8 @@ dependencies {
 
 
     implementation(libs.androidx.appcompat)
+    // GameActivity provides a SurfaceView host so Kotlin touch controls can safely overlay the Rust renderer.
+    implementation("androidx.games:games-activity:4.4.0")
     implementation(libs.androidx.constraintlayout)
     implementation(libs.android.material)
     implementation(libs.androidx.startup.runtime)

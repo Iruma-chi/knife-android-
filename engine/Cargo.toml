@@ -12,7 +12,7 @@ clap = { version = "4.6.7", features = ["derive"] }
 bytemuck = { version = "1.25.2", features = ["derive"] }
 glam = "0.34.1"
 wgpu = "30.0.1"
-winit = { version = "0.30.13", features = ["android-native-activity"] }
+winit = { version = "0.30.13", features = ["android-game-activity"] }
 kira = { version = "0.12.5", default-features = false, features = ["cpal"] }
 
 [profile.dev.package."*"]

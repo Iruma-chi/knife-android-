@@ -1,6 +1,6 @@
 # Tsukihime Android 0.1.3 (development)
 
-This package contains the Kotlin launcher and the upstream Rust `knife` engine source adapted for Android NativeActivity. It is an integration development build, not yet a device-tested playable release.
+This package contains the Kotlin launcher and the upstream Rust `knife` engine source adapted for Android GameActivity. It is an integration development build, not yet a device-tested playable release.
 
 1. Open the Gradle project in Code on the Go. A local build without the native Rust library is only the importer shell; Play stays disabled.
 2. Build the Rust ARM64 library and debug APK with the included GitHub Actions workflow (`Android ARM64 debug APK`) from a GitHub repository containing this project.

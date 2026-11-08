@@ -1,3 +1,5 @@
+> Historical stage note: this document records the earlier NativeActivity-oriented Stage 2 snapshot. Build #16 later completed the playable NativeActivity integration. The Android controls patch now migrates the host to Winit's `android-game-activity` backend; see the repository-root `ANDROID-CONTROLS-IMPLEMENTATION.md` for the current architecture and validation status.
+
 # Android port stage 2: touch routing and dependency isolation
 
 This patch is based on upstream knife 0.9.10.

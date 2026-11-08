@@ -15,12 +15,12 @@
         android:theme="@style/AppTheme">
         <!-- Winit/Rust game window. The launcher remains a normal Kotlin Activity. -->
         <activity
-            android:name="android.app.NativeActivity"
+            android:name=".GameActivity"
             android:label="Tsukihime Android"
             android:exported="false"
             android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|navigation|uiMode"
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+            android:theme="@style/AppTheme">
             <meta-data android:name="android.app.lib_name" android:value="main" />
         </activity>
 

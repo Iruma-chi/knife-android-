@@ -20,10 +20,10 @@ import androidx.appcompat.app.AppCompatActivity
 import java.io.File
 
 /**
- * Tsukihime Android 0.1.3 - no-copy asset folder selector and NativeActivity launcher.
+ * Tsukihime Android 0.1.3 - no-copy asset folder selector and GameActivity launcher.
  * The user selects an existing local shared-storage folder. The app stores its URI/path,
  * validates in place and never copies or deletes the user's game data.
- * The selected absolute assets path is written to filesDir/assets-path.txt for the Rust NativeActivity.
+ * The selected absolute assets path is written to filesDir/assets-path.txt for the Rust GameActivity.
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
@@ -111,7 +111,7 @@ class MainActivity : AppCompatActivity() {
                 } else if (!nativeEngineAvailable()) {
                     status.text = "The Rust game engine is not packaged in this APK yet. Build the ARM64 APK using the project's GitHub Actions workflow."
                 } else {
-                    startActivity(Intent(this@MainActivity, android.app.NativeActivity::class.java))
+                    startActivity(Intent(this@MainActivity, GameActivity::class.java))
                 }
             }
         }

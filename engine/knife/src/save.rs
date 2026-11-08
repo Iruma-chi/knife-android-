@@ -215,7 +215,7 @@ pub struct Kept {
 
 static SAVE_FILE: std::sync::OnceLock<std::sync::RwLock<Option<PathBuf>>> = std::sync::OnceLock::new();
 
-/// Use this save file (`--save-file`) instead of the default. Android can relaunch its NativeActivity
+/// Use this save file (`--save-file`) instead of the default. Android can relaunch its game Activity
 /// without restarting the process, so the selected game build may change between launches.
 pub fn set_file(path: PathBuf) {
     *SAVE_FILE.get_or_init(|| std::sync::RwLock::new(None)).write().unwrap() = Some(path);

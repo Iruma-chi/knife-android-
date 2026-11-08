@@ -25,6 +25,8 @@ mod voice_ids;
 mod witch;
 
 use std::{path::PathBuf, sync::Arc, time::Instant};
+#[cfg(target_os = "android")]
+use std::sync::Mutex;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -40,6 +42,56 @@ use winit::{
 
 #[cfg(target_os = "android")]
 use winit::platform::android::{activity::AndroidApp, EventLoopBuilderExtAndroid};
+#[cfg(target_os = "android")]
+use winit::event_loop::EventLoopProxy;
+
+/// Actions sent by Android's touch overlay to the Winit-owned game thread.
+#[derive(Clone, Copy, Debug)]
+enum AndroidControlEvent {
+    Pad(Pad),
+    QuickSave,
+    QuickLoad,
+    OpenSave,
+    OpenLoad,
+    OpenConfig,
+    ReturnToTitle,
+    SetGestures(bool),
+}
+
+#[cfg(target_os = "android")]
+struct AndroidControlBridge {
+    proxy: Option<EventLoopProxy<AndroidControlEvent>>,
+    pending: Vec<AndroidControlEvent>,
+}
+
+#[cfg(target_os = "android")]
+static ANDROID_CONTROL_BRIDGE: Mutex<AndroidControlBridge> = Mutex::new(AndroidControlBridge {
+    proxy: None,
+    pending: Vec::new(),
+});
+
+#[cfg(target_os = "android")]
+fn send_android_control(event: AndroidControlEvent) {
+    if let Ok(mut bridge) = ANDROID_CONTROL_BRIDGE.lock() {
+        if let Some(proxy) = bridge.proxy.clone() {
+            if proxy.send_event(event).is_err() {
+                bridge.pending.push(event);
+            }
+        } else {
+            bridge.pending.push(event);
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+fn attach_android_control_proxy(proxy: EventLoopProxy<AndroidControlEvent>) {
+    if let Ok(mut bridge) = ANDROID_CONTROL_BRIDGE.lock() {
+        bridge.proxy = Some(proxy.clone());
+        for event in bridge.pending.drain(..) {
+            let _ = proxy.send_event(event);
+        }
+    }
+}
 
 // Options marked "Debug" (and --scene, --label, --auto) exist only with `--features debug`.
 #[derive(Parser, Clone)]
@@ -236,6 +288,8 @@ struct App {
     cursor: (f64, f64),
     /// The single primary finger routed into the engine touch/mouse implementation.
     touch_id: Option<u64>,
+    /// Android overlay actions received before the game UI has finished initializing.
+    pending_android_controls: Vec<AndroidControlEvent>,
     elapsed: f32,
     next_shot: f32,
     shot_n: u32,
@@ -300,7 +354,7 @@ impl App {
         let mut attrs = Window::default_attributes().with_title(assets::TITLE);
         #[cfg(windows)]
         let mut centering_area = None;
-        // Desktop uses a 16:9 window centred on the monitor. Android NativeActivity already owns
+        // Desktop uses a 16:9 window centred on the monitor. Android GameActivity hosts
         // a fullscreen surface, so let Winit use the device's actual surface dimensions.
         #[cfg(not(target_os = "android"))]
         {
@@ -596,6 +650,28 @@ impl App {
         }
     }
 
+    fn apply_android_control(&mut self, event: AndroidControlEvent) {
+        let (Some(game), Some(ui), Some(renderer)) =
+            (&mut self.game, &mut self.ui, &self.renderer)
+        else {
+            self.pending_android_controls.push(event);
+            return;
+        };
+        match event {
+            AndroidControlEvent::Pad(button) => {
+                ui.pad(game, renderer, button, true, false);
+                ui.pad(game, renderer, button, false, false);
+            }
+            AndroidControlEvent::QuickSave => ui.quick_save(game, renderer),
+            AndroidControlEvent::QuickLoad => ui.quick_load(game, renderer),
+            AndroidControlEvent::OpenSave => ui.android_open_save(game, renderer),
+            AndroidControlEvent::OpenLoad => ui.android_open_load(game, renderer),
+            AndroidControlEvent::OpenConfig => ui.android_open_config(game, renderer),
+            AndroidControlEvent::ReturnToTitle => ui.android_return_to_title(game, renderer),
+            AndroidControlEvent::SetGestures(enabled) => ui.android_set_gestures_enabled(enabled),
+        }
+    }
+
     /// One frame, then --exit-after's check.
     fn tick(&mut self, el: &ActiveEventLoop) {
         self.frame();
@@ -608,7 +684,11 @@ impl App {
     }
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler<AndroidControlEvent> for App {
+    fn user_event(&mut self, _el: &ActiveEventLoop, event: AndroidControlEvent) {
+        self.apply_android_control(event);
+    }
+
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         if !self.occluded || self.game.is_none() {
             return;
@@ -622,11 +702,16 @@ impl ApplicationHandler for App {
     }
 
     fn resumed(&mut self, el: &ActiveEventLoop) {
-        if self.window.is_none()
-            && let Err(e) = self.init(el)
-        {
-            eprintln!("startup failed: {e:#}");
-            el.exit();
+        if self.window.is_none() {
+            if let Err(e) = self.init(el) {
+                eprintln!("startup failed: {e:#}");
+                el.exit();
+                return;
+            }
+            let pending = std::mem::take(&mut self.pending_android_controls);
+            for event in pending {
+                self.apply_android_control(event);
+            }
         }
     }
 
@@ -894,6 +979,7 @@ fn make_app(cli: Cli) -> App {
         last: Instant::now(),
         cursor: (0.0, 0.0),
         touch_id: None,
+        pending_android_controls: Vec::new(),
         elapsed: 0.0,
         next_shot: shot_from,
         shot_n: 0,
@@ -907,7 +993,7 @@ fn make_app(cli: Cli) -> App {
     }
 }
 
-fn run_event_loop(cli: Cli, el: EventLoop<()>) -> Result<()> {
+fn run_event_loop(cli: Cli, el: EventLoop<AndroidControlEvent>) -> Result<()> {
     el.set_control_flow(ControlFlow::Poll);
     let mut app = make_app(cli);
     el.run_app(&mut app)?;
@@ -921,11 +1007,11 @@ pub fn run_desktop() -> Result<()> {
     // knife.ini fills the options the command line leaves out.
     let cli = Cli::parse_from(ini::merged_args());
     configure_engine(&cli, None)?;
-    let el = EventLoop::new()?;
+    let el = EventLoop::<AndroidControlEvent>::with_user_event().build()?;
     run_event_loop(cli, el)
 }
 
-/// NativeActivity entry point used by Winit 0.30 on Android.
+/// GameActivity entry point used by Winit 0.30 on Android.
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 fn android_main(android_app: AndroidApp) {
@@ -947,10 +1033,16 @@ fn android_main(android_app: AndroidApp) {
         ])?;
         configure_engine(&cli, Some(&data_dir))?;
 
-        let mut builder = EventLoop::builder();
+        let mut builder = EventLoop::<AndroidControlEvent>::with_user_event();
         builder.with_android_app(android_app.clone());
         let event_loop = builder.build()?;
-        run_event_loop(cli, event_loop)
+        attach_android_control_proxy(event_loop.create_proxy());
+        let result = run_event_loop(cli, event_loop);
+        if let Ok(mut bridge) = ANDROID_CONTROL_BRIDGE.lock() {
+            bridge.proxy = None;
+            bridge.pending.clear();
+        }
+        result
     })();
     // android-activity owns the ndk-context lifetime and releases it with this Activity.
     if let Err(error) = result {
@@ -959,7 +1051,32 @@ fn android_main(android_app: AndroidApp) {
 }
 
 
-/// The left stick: the controllers' tilt plus W / S / A / D (up, down, left, right) at full tilt, clamped to ±128.
+/// JNI bridge called by the Kotlin overlay; events are marshalled onto Winit's event-loop thread.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_dev_tsukihimeandroid_GameActivity_nativeControl(
+    _env: *mut std::ffi::c_void, _activity: *mut std::ffi::c_void, action: i32,
+) {
+    let event = match action {
+        0 => AndroidControlEvent::Pad(Pad::A),
+        1 => AndroidControlEvent::Pad(Pad::B),
+        2 => AndroidControlEvent::Pad(Pad::X),
+        3 => AndroidControlEvent::Pad(Pad::L),
+        4 => AndroidControlEvent::Pad(Pad::R),
+        5 => AndroidControlEvent::QuickSave,
+        6 => AndroidControlEvent::QuickLoad,
+        7 => AndroidControlEvent::OpenSave,
+        8 => AndroidControlEvent::OpenLoad,
+        9 => AndroidControlEvent::OpenConfig,
+        10 => AndroidControlEvent::ReturnToTitle,
+        11 => AndroidControlEvent::SetGestures(false),
+        12 => AndroidControlEvent::SetGestures(true),
+        _ => return,
+    };
+    send_android_control(event);
+}
+
+/// The left stick: controller tilt plus W / S / A / D at full tilt, clamped to ±128.
 fn stick(pads: [i32; 2], [up, down, left, right]: [bool; 4]) -> [i32; 2] {
     let key = |a: bool, b: bool| (i32::from(a) - i32::from(b)) * 128;
     [(pads[0] + key(right, left)).clamp(-128, 128), (pads[1] + key(up, down)).clamp(-128, 128)]
