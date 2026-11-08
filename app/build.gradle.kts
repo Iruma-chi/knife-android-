@@ -1,31 +1,25 @@
-
-import java.util.Properties
-import java.io.FileInputStream
-
 plugins {
     alias(libs.plugins.android.application)
 }
 
-val keystorePropsFile = rootProject.file("release.properties")
-val keystoreProps = Properties()
-
-if (keystorePropsFile.exists()) {
-    keystoreProps.load(FileInputStream(keystorePropsFile))
-}
-
-val hasValidSigningProps = keystorePropsFile.exists().also { exists ->
-    if (exists) {
-        FileInputStream(keystorePropsFile).use { keystoreProps.load(it) }
-    }
-}.let {
-    listOf("storeFile", "storePassword", 
-            "keyAlias", "keyPassword").all { key ->
-        keystoreProps[key] != null
-    }
-}
+val signingStorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+val signingStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+val signingKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+val signingKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+val hasStableSigningKey = listOf(signingStorePath, signingStorePassword, signingKeyAlias, signingKeyPassword).all { !it.isNullOrBlank() }
 
 
 android {
+    signingConfigs {
+        create("stable") {
+            if (hasStableSigningKey) {
+                storeFile = file(signingStorePath!!)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
+            }
+        }
+    }
     packaging {
         jniLibs {
             useLegacyPackaging = true
@@ -59,6 +53,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (hasStableSigningKey) {
+                signingConfig = signingConfigs.getByName("stable")
+            }
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
