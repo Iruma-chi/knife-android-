@@ -41,10 +41,10 @@ impl Decoder {
     fn read_layout(&mut self) {
         let format = self.codec.output_format();
         self.layout = Layout {
-            width: format.i32("width").unwrap_or(super::W as i32).max(0) as usize,
-            height: format.i32("height").unwrap_or(super::H as i32).max(0) as usize,
-            stride: format.i32("stride").unwrap_or(super::W as i32).max(0) as usize,
-            slice_height: format.i32("slice-height").unwrap_or(super::H as i32).max(0) as usize,
+            width: format.i32("width").unwrap_or(super::super::W as i32).max(0) as usize,
+            height: format.i32("height").unwrap_or(super::super::H as i32).max(0) as usize,
+            stride: format.i32("stride").unwrap_or(super::super::W as i32).max(0) as usize,
+            slice_height: format.i32("slice-height").unwrap_or(super::super::H as i32).max(0) as usize,
             color_format: format.i32("color-format").unwrap_or(COLOR_YUV420_SEMIPLANAR),
         };
     }
@@ -117,9 +117,9 @@ impl FrameDecoder for Decoder {
     const NAME: &'static str = "Android NDK MediaCodec";
 
     fn new(info: &StreamInfo) -> Result<Self> {
-        ensure!(info.width == super::W && info.height == super::H,
+        ensure!(info.width == super::super::W && info.height == super::super::H,
             "Android movie decoder expects {}x{} H.264, got {}x{}",
-            super::W, super::H, info.width, info.height);
+            super::super::W, super::super::H, info.width, info.height);
 
         let mut csd0 = Vec::new();
         let mut csd1 = Vec::new();
@@ -213,8 +213,8 @@ impl FrameDecoder for Decoder {
 }
 
 fn frame_from_output(data: &[u8], offset: usize, size: usize, layout: Layout) -> Result<Nv12Frame> {
-    let w = super::W as usize;
-    let h = super::H as usize;
+    let w = super::super::W as usize;
+    let h = super::super::H as usize;
     ensure!(layout.width == w && layout.height == h,
         "MediaCodec output dimensions are {}x{}, expected {}x{}",
         layout.width, layout.height, w, h);
@@ -264,5 +264,5 @@ fn frame_from_output(data: &[u8], offset: usize, size: usize, layout: Layout) ->
         other => bail!("Android MediaCodec returned unsupported YUV color format {other:#x}; expected planar (19) or semi-planar (21)"),
     }
 
-    Ok(Nv12Frame { y_plane, uv_plane, width: super::W, height: super::H })
+    Ok(Nv12Frame { y_plane, uv_plane, width: super::super::W, height: super::super::H })
 }

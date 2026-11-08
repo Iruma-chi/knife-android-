@@ -439,14 +439,6 @@ impl Ui {
     }
 
     /// Drop an interrupted platform touch without interpreting it as a tap or swipe.
-    pub fn mouse_cancel(&mut self) {
-        self.touch.down = false;
-        self.touch.press = None;
-        self.touch.dragged = false;
-        self.touch.swallow = false;
-        self.drag.release();
-        self.bar = None;
-    }
 
     pub fn mouse_up(&mut self, game: &mut Game, r: &Renderer) {
         self.touch.down = false;
