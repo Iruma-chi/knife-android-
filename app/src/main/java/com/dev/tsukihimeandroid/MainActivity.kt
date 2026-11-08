@@ -5,12 +5,17 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.graphics.BitmapFactory
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -20,7 +25,7 @@ import androidx.appcompat.app.AppCompatActivity
 import java.io.File
 
 /**
- * Tsukihime Android 0.1.3 - no-copy asset folder selector and GameActivity launcher.
+ * Tsukihime Android 0.1.5 - no-copy asset folder selector, save backup manager and GameActivity launcher.
  * The user selects an existing local shared-storage folder. The app stores its URI/path,
  * validates in place and never copies or deletes the user's game data.
  * The selected absolute assets path is written to filesDir/assets-path.txt for the Rust GameActivity.
@@ -31,11 +36,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var chooseButton: Button
     private lateinit var forgetButton: Button
     private lateinit var playButton: Button
+    private lateinit var exportSaveButton: Button
+    private lateinit var importSaveButton: Button
+
+    private val saveBackups by lazy { SaveBackupManager(this) }
 
     private val prefs by lazy { getSharedPreferences("game_data", MODE_PRIVATE) }
 
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) rememberFolder(uri)
+    }
+    private val exportSavePicker = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) runSaveOperation("Exporting save…") { saveBackups.export(uri); "Save backup exported successfully." }
+    }
+    private val importSavePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) confirmSaveImport(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,17 +71,22 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(28), dp(24), dp(28))
             gravity = Gravity.CENTER_HORIZONTAL
-            setBackgroundColor(0xFF101522.toInt())
+            background = LayerDrawable(arrayOf(
+                BitmapDrawable(resources, BitmapFactory.decodeResource(resources, R.drawable.launcher_background_user)).apply { gravity = Gravity.FILL },
+                ColorDrawable(0x52061122)
+            ))
         }
+        column.addView(ImageView(this).apply {
+            setImageResource(R.drawable.tsukihime_official_logo)
+            contentDescription = "Tsukihime - A piece of blue glass moon"
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            adjustViewBounds = true
+        }, LinearLayout.LayoutParams(dp(260), dp(104)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            bottomMargin = dp(4)
+        })
         column.addView(TextView(this).apply {
-            text = "TSUKIHIME ANDROID"
-            textSize = 25f
-            setTextColor(0xFFF4F0F7.toInt())
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-        }, fullWidth())
-        column.addView(TextView(this).apply {
-            text = "Version 0.1.3 · Development build"
+            text = "Version 0.1.5 · Development build"
             textSize = 13f
             setTextColor(0xFFB8B5C4.toInt())
             gravity = Gravity.CENTER
@@ -138,6 +158,32 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { confirmForgetFolder() }
         }
         column.addView(forgetButton, fullWidth().apply { topMargin = dp(8) })
+
+        exportSaveButton = Button(this).apply {
+            text = "EXPORT SAVE DATA"
+            setOnClickListener {
+                try {
+                    val profile = saveBackups.activeProfile()
+                    exportSavePicker.launch("Tsukihime-${profile.id}-save-backup.zip")
+                } catch (error: Exception) {
+                    showSaveMessage("Cannot export save", error.message ?: "Save export is unavailable.")
+                }
+            }
+        }
+        column.addView(exportSaveButton, fullWidth().apply { topMargin = dp(12) })
+
+        importSaveButton = Button(this).apply {
+            text = "IMPORT SAVE DATA"
+            setOnClickListener {
+                try {
+                    saveBackups.activeProfile()
+                    importSavePicker.launch(arrayOf("application/zip", "application/octet-stream"))
+                } catch (error: Exception) {
+                    showSaveMessage("Import unavailable", error.message ?: "Select and validate the game assets folder first.")
+                }
+            }
+        }
+        column.addView(importSaveButton, fullWidth().apply { topMargin = dp(8) })
 
         column.addView(TextView(this).apply {
             text = "No game files are included in the APK. The selected folder is read in place. Forgetting the selected folder only removes this app's saved location and permission; it never deletes your assets."
@@ -274,6 +320,34 @@ class MainActivity : AppCompatActivity() {
             playButton.isEnabled = path != null && validateAssets(File(path)).first &&
                 File(filesDir, "assets-path.txt").isFile && nativeEngineAvailable()
         }
+    }
+
+    private fun confirmSaveImport(uri: Uri) {
+        AlertDialog.Builder(this)
+            .setTitle("Import save backup?")
+            .setMessage("The selected backup will be validated against the currently selected game profile. Your existing save will be preserved as a rollback copy before replacement. Do not start the game during import.")
+            .setPositiveButton("IMPORT") { _, _ ->
+                runSaveOperation("Importing save…") { saveBackups.import(uri) }
+            }
+            .setNegativeButton("CANCEL", null)
+            .show()
+    }
+
+    private fun runSaveOperation(progress: String, operation: () -> String) {
+        status.text = progress
+        try {
+            status.text = operation()
+        } catch (error: Exception) {
+            status.text = "Save operation failed: ${error.message ?: error.javaClass.simpleName}. Your existing save was not intentionally discarded."
+        }
+    }
+
+    private fun showSaveMessage(title: String, message: String) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     private fun confirmForgetFolder() {

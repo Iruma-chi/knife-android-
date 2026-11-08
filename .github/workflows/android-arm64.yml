@@ -56,14 +56,19 @@ jobs:
           chmod 600 "$RUNNER_TEMP/tsukihime-release.jks"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/tsukihime-release.jks" >> "$GITHUB_ENV"
 
+      - name: Fetch official Tsukihime logo asset
+        run: bash scripts/fetch-official-tsukihime-logo.sh
+
       - name: Build debug APK
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle :app:assembleDebug
+        run: |
+          gradle :app:assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/Tsukihime-Android-port-0.1.5.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Tsukihime-Android-0.1.4-arm64-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Tsukihime-Android-0.1.5-arm64-debug
+          path: app/build/outputs/apk/debug/Tsukihime-Android-port-0.1.5.apk

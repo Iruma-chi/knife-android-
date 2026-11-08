@@ -2224,6 +2224,13 @@ impl Ui {
         self.screen == Screen::Game
     }
 
+    /// Whether the native backlog is currently the foreground system screen.
+    /// Exposed to Android so backlog-only overlay affordances never appear over the story.
+    pub fn android_backlog_active(&self) -> bool {
+        matches!(self.screen, Screen::Backlog { .. })
+            || (self.screen == Screen::Witch && self.w.scr == witch::WScr::Backlog)
+    }
+
     /// sub_4EC00 (overseas): the system menu shows (dword_B359F4 > 0: open, or fading, and kept at 1 under
     /// its save / load screens and dialogs; 0 while the chart runs) or its config screen is open (states
     /// 11 / 12). The overseas sub_391A0 then draws no message window, text or choice.

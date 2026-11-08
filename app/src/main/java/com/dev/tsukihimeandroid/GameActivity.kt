@@ -7,6 +7,8 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -36,6 +38,8 @@ private object ControlAction {
     const val RETURN_TO_TITLE = 10
     const val GESTURES_OFF = 11
     const val GESTURES_ON = 12
+    const val BACKLOG_PREVIOUS = 13
+    const val BACKLOG_NEXT = 14
 }
 
 /**
@@ -48,6 +52,36 @@ class GameActivity : AndroidGameActivity() {
     private val controls = linkedMapOf<String, TextView>()
     private lateinit var overlay: ControlOverlay
     private lateinit var settingsButton: TextView
+    private lateinit var backlogPrevious: TextView
+    private lateinit var backlogNext: TextView
+    private val backlogHandler = Handler(Looper.getMainLooper())
+    private var repeatingArrowAction: Int? = null
+    private val arrowRepeat = object : Runnable {
+        override fun run() {
+            val action = repeatingArrowAction
+            if (action != null) {
+                val active = try { nativeIsBacklogActive() } catch (_: UnsatisfiedLinkError) { false }
+                if (active) sendControl(action)
+                backlogHandler.postDelayed(this, 140L)
+            }
+        }
+    }
+    private val backlogPoll = object : Runnable {
+        override fun run() {
+            if (::backlogPrevious.isInitialized) {
+                val active = try { nativeIsBacklogActive() } catch (_: UnsatisfiedLinkError) { false }
+                val enabled = prefs.getBoolean("enabled", true) &&
+                    prefs.getBoolean("backlog_arrows", true)
+                val visible = active && enabled
+                backlogPrevious.visibility = if (visible) View.VISIBLE else View.GONE
+                backlogNext.visibility = if (visible) View.VISIBLE else View.GONE
+                val alpha = prefs.getInt("backlog_arrow_opacity", 86).coerceIn(10, 100) / 100f
+                backlogPrevious.alpha = alpha
+                backlogNext.alpha = alpha
+            }
+            backlogHandler.postDelayed(this, 180L)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -99,6 +133,54 @@ class GameActivity : AndroidGameActivity() {
             topMargin = dp(12)
             marginEnd = dp(12)
         })
+
+        fun backlogArrow(symbol: String, description: String, action: Int, verticalOffset: Int): TextView {
+            return TextView(this).apply {
+                text = symbol
+                textSize = 31f
+                gravity = Gravity.CENTER
+                contentDescription = description
+                setTextColor(0xFFE6D9BE.toInt())
+                typeface = Typeface.create("serif", Typeface.NORMAL)
+                background = ColorDrawable(android.graphics.Color.TRANSPARENT)
+                isClickable = true
+                isFocusable = true
+                setOnTouchListener { _, event ->
+                    when (event.actionMasked) {
+                        android.view.MotionEvent.ACTION_DOWN -> {
+                            repeatingArrowAction = action
+                            sendControl(action)
+                            backlogHandler.removeCallbacks(arrowRepeat)
+                            backlogHandler.postDelayed(arrowRepeat, 360L)
+                            true
+                        }
+                        android.view.MotionEvent.ACTION_UP,
+                        android.view.MotionEvent.ACTION_CANCEL -> {
+                            repeatingArrowAction = null
+                            backlogHandler.removeCallbacks(arrowRepeat)
+                            true
+                        }
+                        else -> true
+                    }
+                }
+                translationY = dp(verticalOffset).toFloat()
+            }
+        }
+        val arrowSize = dp(46)
+        backlogPrevious = backlogArrow("↑", "Scroll backlog toward newer entries",
+            ControlAction.BACKLOG_PREVIOUS, -27)
+        backlogNext = backlogArrow("↓", "Scroll backlog toward older entries",
+            ControlAction.BACKLOG_NEXT, 27)
+        overlay.addView(backlogPrevious, FrameLayout.LayoutParams(arrowSize, arrowSize, Gravity.END or Gravity.CENTER_VERTICAL).apply {
+            marginEnd = dp(8)
+        })
+        overlay.addView(backlogNext, FrameLayout.LayoutParams(arrowSize, arrowSize, Gravity.END or Gravity.CENTER_VERTICAL).apply {
+            marginEnd = dp(8)
+        })
+        backlogPrevious.visibility = View.GONE
+        backlogNext.visibility = View.GONE
+        backlogHandler.post(backlogPoll)
+
         overlay.post {
             applyPreferences()
             syncGesturePreference()
@@ -318,6 +400,7 @@ class GameActivity : AndroidGameActivity() {
         check("Show Load button", "show_load", true)
         check("Enable in-game swipe gestures", "gestures", true)
         check("Use Android system Back gesture / button", "edge_back", true)
+        check("Show backlog scroll arrows", "backlog_arrows", true)
 
         content.addView(settingSection("APPEARANCE"))
         val opacityLabel = settingLabel("Button opacity: ${prefs.getInt("opacity", 76)}%")
@@ -331,6 +414,23 @@ class GameActivity : AndroidGameActivity() {
                 val opacity = value + 20
                 prefs.edit().putInt("opacity", opacity).apply()
                 opacityLabel.text = "Button opacity: $opacity%"
+                applyPreferences()
+            })
+        })
+
+        val arrowOpacityLabel = settingLabel(
+            "Backlog arrow opacity: ${prefs.getInt("backlog_arrow_opacity", 86)}%"
+        )
+        content.addView(arrowOpacityLabel)
+        content.addView(SeekBar(this).apply {
+            progressTintList = ColorStateList.valueOf(0xFFC8B58E.toInt())
+            thumbTintList = ColorStateList.valueOf(0xFFE6D4AE.toInt())
+            max = 90
+            progress = prefs.getInt("backlog_arrow_opacity", 86).coerceIn(10, 100) - 10
+            setOnSeekBarChangeListener(seekListener { value ->
+                val opacity = value + 10
+                prefs.edit().putInt("backlog_arrow_opacity", opacity).apply()
+                arrowOpacityLabel.text = "Backlog arrow opacity: $opacity%"
                 applyPreferences()
             })
         })
@@ -427,6 +527,11 @@ class GameActivity : AndroidGameActivity() {
             settingsButton.alpha = alpha
             settingsButton.visibility = View.VISIBLE
         }
+        if (::backlogPrevious.isInitialized) {
+            val arrowAlpha = prefs.getInt("backlog_arrow_opacity", 86).coerceIn(10, 100) / 100f
+            backlogPrevious.alpha = arrowAlpha
+            backlogNext.alpha = arrowAlpha
+        }
     }
 
     private fun savePosition(id: String, view: View) {
@@ -446,6 +551,16 @@ class GameActivity : AndroidGameActivity() {
 
     @Keep
     private external fun nativeControl(action: Int)
+
+    @Keep
+    private external fun nativeIsBacklogActive(): Boolean
+
+    override fun onDestroy() {
+        backlogHandler.removeCallbacks(backlogPoll)
+        backlogHandler.removeCallbacks(arrowRepeat)
+        repeatingArrowAction = null
+        super.onDestroy()
+    }
 
     private fun syncGesturePreference() {
         sendControl(if (prefs.getBoolean("gestures", true)) ControlAction.GESTURES_ON else ControlAction.GESTURES_OFF)

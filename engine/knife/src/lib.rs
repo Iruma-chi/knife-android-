@@ -65,6 +65,10 @@ struct AndroidControlBridge {
 }
 
 #[cfg(target_os = "android")]
+static ANDROID_BACKLOG_ACTIVE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_os = "android")]
 static ANDROID_CONTROL_BRIDGE: Mutex<AndroidControlBridge> = Mutex::new(AndroidControlBridge {
     proxy: None,
     pending: Vec::new(),
@@ -534,6 +538,8 @@ impl App {
         ui.story_input(g, r, step);
         g.update(r, step);
         ui.update(g, r, step);
+        #[cfg(target_os = "android")]
+        ANDROID_BACKLOG_ACTIVE.store(ui.android_backlog_active(), std::sync::atomic::Ordering::Relaxed);
         // nn::atk's update after the frame callback, then the present (sub_FC064)
         g.sound.flush();
         g.system_menu_shown = ui.system_menu_shown();
@@ -1071,9 +1077,20 @@ pub extern "system" fn Java_com_dev_tsukihimeandroid_GameActivity_nativeControl(
         10 => AndroidControlEvent::ReturnToTitle,
         11 => AndroidControlEvent::SetGestures(false),
         12 => AndroidControlEvent::SetGestures(true),
+        13 => AndroidControlEvent::Pad(Pad::Up),
+        14 => AndroidControlEvent::Pad(Pad::Down),
         _ => return,
     };
     send_android_control(event);
+}
+
+/// Polled by the Android overlay; true only while the engine's backlog screen is active.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_dev_tsukihimeandroid_GameActivity_nativeIsBacklogActive(
+    _env: *mut std::ffi::c_void, _activity: *mut std::ffi::c_void,
+) -> u8 {
+    u8::from(ANDROID_BACKLOG_ACTIVE.load(std::sync::atomic::Ordering::Relaxed))
 }
 
 /// The left stick: controller tilt plus W / S / A / D at full tilt, clamped to ±128.

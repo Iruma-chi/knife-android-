@@ -16,7 +16,7 @@
         <!-- Winit/Rust game window. The launcher remains a normal Kotlin Activity. -->
         <activity
             android:name=".GameActivity"
-            android:label="Tsukihime Android"
+            android:label="Tsukihime Android port"
             android:exported="false"
             android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|navigation|uiMode"
