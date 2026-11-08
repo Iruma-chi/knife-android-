@@ -8,7 +8,8 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+
 
     steps:
       - uses: actions/checkout@v4
@@ -18,13 +19,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Gradle
-        run: |
-          curl -fL --retry 3 https://downloads.gradle.org/distributions/gradle-9.6.1-bin.zip -o /tmp/gradle.zip
-          curl -fL --retry 3 https://downloads.gradle.org/distributions/gradle-9.6.1-bin.zip.sha256 -o /tmp/gradle.sha256
-          echo "$(cat /tmp/gradle.sha256)  /tmp/gradle.zip" | sha256sum -c -
-          unzip -q /tmp/gradle.zip -d "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/gradle-9.6.1/bin" >> "$GITHUB_PATH"
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
