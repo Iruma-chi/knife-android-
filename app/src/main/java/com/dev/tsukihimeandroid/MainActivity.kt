@@ -72,7 +72,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(24), dp(28), dp(24), dp(28))
             gravity = Gravity.CENTER_HORIZONTAL
             background = LayerDrawable(arrayOf(
-                BitmapDrawable(resources, BitmapFactory.decodeResource(resources, R.drawable.launcher_background_user)).apply { gravity = Gravity.FILL },
+                BitmapDrawable(resources, BitmapFactory.decodeResource(resources, R.drawable.launcher_background)).apply { gravity = Gravity.FILL },
                 ColorDrawable(0x52061122)
             ))
         }
