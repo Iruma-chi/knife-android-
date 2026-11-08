@@ -7,7 +7,6 @@
     <!-- Required for the user-visible Downloads/Tsukihime Android game-data directory. -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <application 
-        android:extractNativeLibs="true"
         android:allowBackup="true" 
         android:icon="@mipmap/ic_launcher" 
         android:roundIcon="@mipmap/ic_launcher" 

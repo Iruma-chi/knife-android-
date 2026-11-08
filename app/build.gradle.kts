@@ -26,6 +26,11 @@ val hasValidSigningProps = keystorePropsFile.exists().also { exists ->
 
 
 android {
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
     namespace = "com.dev.tsukihimeandroid"
     compileSdk = 36 
     
