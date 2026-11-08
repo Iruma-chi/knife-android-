@@ -33,6 +33,9 @@ jobs:
         with:
           targets: aarch64-linux-android
 
+      - name: Install Android Rust target
+        run: rustup target add aarch64-linux-android
+
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
 
