@@ -140,7 +140,7 @@ Bug reports, testing feedback, and constructive contributions are welcome.
 
 - "AuroraWright" (https://github.com/AuroraWright) — Original Knife engine and foundational work.
 - Type-Moon — Creators of Tsukihime -A piece of blue glass moon-.
-- Everyone whose work and contributions helped make this project possible.
+- 
 
 🤖 Development Disclosure
 
