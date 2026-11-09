@@ -394,22 +394,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun isValidBfttf(file: File): Boolean {
-        if (!file.isFile || file.length() < 9L) return false
-        val header = ByteArray(8)
-        FileInputStream(file).use { input ->
-            var offset = 0
-            while (offset < header.size) {
-                val count = input.read(header, offset, header.size - offset)
-                if (count < 0) return false
-                offset += count
-            }
+        if (!file.isFile || file.length() < 8L) return false
+        val magic = file.inputStream().use { input ->
+            ByteArray(4).also { require(input.read(it) == 4) }
         }
-        val key = 0x06186249
-        val magic = ByteBuffer.wrap(header, 0, 4).order(ByteOrder.LITTLE_ENDIAN).int xor key
-        if (magic != 0x18029A7F) return false
-        val encodedSize = ByteBuffer.wrap(header, 4, 4).order(ByteOrder.LITTLE_ENDIAN).int xor key
-        val decodedSize = Integer.reverseBytes(encodedSize).toLong() and 0xFFFFFFFFL
-        return decodedSize > 0 && decodedSize <= file.length() - 8L
+        return magic.contentEquals(byteArrayOf(0x36, 0xF8.toByte(), 0x1A, 0x1E))
     }
 
     private fun prepareGame() {
