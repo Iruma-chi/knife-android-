@@ -1057,12 +1057,43 @@ fn android_main(android_app: AndroidApp) {
             .with_context(|| format!("No selected game data. Expected {}. Return to the launcher and select your assets folder.", config.display()))?;
         let assets_path = std::path::PathBuf::from(assets_path.trim());
         anyhow::ensure!(assets_path.is_dir(), "Selected assets folder no longer exists: {}", assets_path.display());
+
+        // A package-only launch uses a small fallback directory containing the shared system
+        // font. If SAF/JNI package installation failed, do not continue into Game::load_fonts
+        // with that incomplete directory: report the missing package instead of starting an
+        // engine with no game archives.
+        let package = package_reader::current();
+        if package.is_none() {
+            let overseas = assets_path.join("w_allpac.nam").is_file();
+            let witch = assets_path.join("jallpac.nam").is_file();
+            let allpac = if overseas { "w_allpac" } else if witch { "jallpac" } else { "allpac" };
+            let allui = if overseas { "w_allui" } else { "allui" };
+            let sound = if witch { "witch.bfsar" } else { "knife1.bfsar" };
+            let required = [
+                "allscr.mrg".to_string(),
+                "script_text.mrg".to_string(),
+                format!("{allpac}.hed"),
+                format!("{allpac}.mrg"),
+                format!("{allui}.hed"),
+                format!("{allui}.mrg"),
+                sound.to_string(),
+            ];
+            let missing: Vec<_> = required.iter()
+                .filter(|name| !assets_path.join(name.as_str()).is_file())
+                .map(|name| name.as_str())
+                .collect();
+            anyhow::ensure!(
+                missing.is_empty(),
+                "No NSP/XCI package was installed and the extracted fallback is incomplete (missing: {}). Return to the launcher, reselect the package and keys, or use PREPARE GAME DATA.",
+                missing.join(", ")
+            );
+        }
+
         let cli = Cli::try_parse_from([
             std::ffi::OsString::from("knife"),
             std::ffi::OsString::from("--assets-dir"),
             assets_path.into_os_string(),
         ])?;
-        let package = package_reader::current();
         configure_engine(&cli, Some(&data_dir), package.as_ref())?;
 
         let mut builder = EventLoop::<AndroidControlEvent>::with_user_event();
