@@ -16,6 +16,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Tsukihime Android 0.1"
+rootProject.name = "TsukiPort 0.3.0-dev"
 
 include(":app")

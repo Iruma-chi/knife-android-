@@ -1,26 +1,38 @@
-# Tsukihime Android 0.1.3 - GameActivity host, Android media and virtual controls integration
+# TsukiPort next-stage integration status
 
-## Included in this stage
+The previous extracted-RomFS folder picker has been replaced in source by a native NSP/XCI
+import-and-prepare flow. The architecture and remaining validation requirements are documented
+in `IMPORTER-IMPLEMENTATION.md` and `BUILD-STATUS.md`.
 
-- The upstream `knife` application source is a Rust library (`cdylib`) named `main`, loaded by Android GameActivity through Winit’s `android-game-activity` backend.
-- A desktop binary wrapper remains available for non-Android targets.
-- Android `android_main` reads `files/assets-path.txt`, configures the existing engine with the selected RomFS path, stores Switch-format saves under app-private `files/knife/`, and creates Winit's event loop with the AndroidApp supplied by GameActivity.
-- The Kotlin launcher persists the selected assets path into its `filesDir` and exposes a Play button that launches the declared GameActivity subclass only when `libmain.so` is packaged.
-- The manifest declares the app’s GameActivity subclass and `android.app.lib_name=main`, with landscape/fullscreen configuration.
-- The previous missing `touch_id: None` initialization is fixed. Android finger events route through the engine's existing touch/mouse gesture implementation (tap, drag, edge swipes, mode panel, backlog and menu gestures). The original title/settings/save/load UI is not recreated in Kotlin.
-- Android virtual controls call a JNI bridge which queues typed actions through Winit's `EventLoopProxy`; the game thread dispatches them into the existing Knife Pad and save/load actions. Android external gamepad polling remains disabled in this stage.
-- The Android movie backend uses the NDK `MediaCodec` API, requests H.264 decoding into YUV420 semi-planar output, retries planar YUV420 if configuration rejects semi-planar, and converts decoded frames to the NV12 format consumed by the existing renderer.
-- AAC movie audio continues through the existing Symphonia decoder and Kira/CPAL output. Winit's `android-activity` glue initializes the Android JNI context before `android_main`, which CPAL's Android backend can use.
-- A GitHub Actions workflow builds the Rust ARM64 library and packages it into a debug APK.
+## What changed
 
-## Build
+- Launcher: package, keys and shared-font selection through Android's Storage Access Framework.
+- Native importer: P5R project's MIT-licensed C++ importer, JNI bridge renamed for TsukiPort.
+- Data preparation: verified RomFS extraction into a staging directory, followed by validation
+  and activation only after success.
+- App identity: display name TsukiPort, application ID `com.dev.tsukihimeandroid.dev`,
+  namespace unchanged as `com.dev.tsukihimeandroid`.
+- Signing: no keystore, passwords, or release signing secrets in source; CI emits an unsigned
+  release APK for local signing through Termux.
 
-A Gradle build without the native Rust library creates only the Kotlin launcher/importer shell; the Play button remains disabled. The controls patch uses the GameActivity AAR and Winit’s matching GameActivity backend. To build a playable candidate, the Rust library must be built first and placed in `app/src/main/jniLibs/arm64-v8a/libmain.so`. The included GitHub Actions workflow does this with `cargo-ndk`, then runs Gradle `assembleDebug`.
+## Explicitly unchanged
 
-## Important storage limitation
+`GameActivity.kt`, `SaveBackupManager.kt`, and all Rust `engine/` files are byte-for-byte
+unchanged from the user's supplied `knife-android-0.1.5.zip`. This preserves the existing
+controls, backlog arrows, opacity controls, save/load features, game interpreter and WGPU/WGSL
+renderer.
 
-Android 11 and later prevent apps from accessing another app's external app-specific directory under `Android/data`, even with All files access. The system folder picker also blocks `Android/data` and `Android/obb`. Put the extracted `assets` folder in a normal shared-storage location such as `Download/Tsukihime/assets` or `Documents/Tsukihime/assets`, then select that folder. Do not put it inside another app's `Android/data` folder.
+## Important architecture boundary
 
-## Validation status
+P5R's no-extraction workflow is not just a generic package reader. It depends on its own NCE
+loader for the Switch ARM64 executable, Switch OS service implementations, NVN graphics API
+implementation on Vulkan, and Maxwell shader translation to SPIR-V. Knife is a
+Tsukihime-specific engine reimplementation with its own WGPU/WGSL renderer and filesystem-based
+asset loader. This project uses the P5R importer to decrypt, verify and extract RomFS; it does
+not add P5R's NCE or GPU runtime.
 
-Build #16 was successfully compiled and installed by the user, who confirmed that the game launches and accepts touch input. The separate GameActivity controls patch has not yet been compiled or installed; it needs an ARM64 GitHub Actions build and device testing. See `ANDROID-CONTROLS-IMPLEMENTATION.md` for the patch validation status.
+## Validation
+
+Host importer parser tests pass. The JNI bridge and importer compile/link in a host CMake build
+using JDK JNI headers and stub Android logging. Android NDK compilation, Gradle packaging,
+Rust ARM64 build and real-device import/gameplay tests are pending.

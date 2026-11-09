@@ -1,0 +1,1 @@
+The Nintendo Switch package importer in app/src/main/cpp/nximport/ is adapted from Brandon04Gonzalez/p5r-android, android/wonder/importer. It is distributed under the MIT License; see P5R-ANDROID-IMPORTER-MIT-LICENSE.txt. No Persona 5 Royal game code or assets are included.

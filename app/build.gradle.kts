@@ -2,22 +2,12 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
-val signingStorePath = System.getenv("ANDROID_KEYSTORE_PATH")
-val signingStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-val signingKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
-val signingKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
-val hasStableSigningKey = listOf(signingStorePath, signingStorePassword, signingKeyAlias, signingKeyPassword).all { !it.isNullOrBlank() }
-
 
 android {
-    signingConfigs {
-        create("stable") {
-            if (hasStableSigningKey) {
-                storeFile = file(signingStorePath!!)
-                storePassword = signingStorePassword
-                keyAlias = signingKeyAlias
-                keyPassword = signingKeyPassword
-            }
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
     packaging {
@@ -26,7 +16,8 @@ android {
         }
     }
     namespace = "com.dev.tsukihimeandroid"
-    compileSdk = 36 
+    compileSdk = 36
+    ndkVersion = "28.2.13676358" 
     
     // disable linter
     lint {
@@ -35,12 +26,17 @@ android {
         
 
     defaultConfig {
-        applicationId = "com.dev.tsukihimeandroid"
+        applicationId = "com.dev.tsukihimeandroid.dev"
         minSdk = 31 
         targetSdk = 36  
-        versionCode = 5
-        versionName = "0.1.5"
+        versionCode = 6
+        versionName = "0.3.0-dev"
         ndk { abiFilters += listOf("arm64-v8a") }
+        externalNativeBuild {
+            cmake {
+                cppFlags += "-std=c++20"
+            }
+        }
         
         vectorDrawables { 
             useSupportLibrary = true
@@ -54,9 +50,7 @@ android {
 
     buildTypes {
         debug {
-            if (hasStableSigningKey) {
-                signingConfig = signingConfigs.getByName("stable")
-            }
+            // Debug builds use the local Android debug key.
         }
         release {
             isMinifyEnabled = true
@@ -105,9 +99,9 @@ android {
     configurations.all {
         resolutionStrategy {
             // Force the use of Kotlin stdlib 1.9.22 for all modules
-            force("org.jetbrains.kotlin:kotlin-stdlib:2.3.21")
-            force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.3.21")
-            force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.21")
+            force("org.jetbrains.kotlin:kotlin-stdlib:2.4.21")
+            force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.4.21")
+            force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.4.21")
     
             // Force specific AndroidX versions to avoid conflicts
             force("androidx.collection:collection:1.4.2")
@@ -135,6 +129,7 @@ dependencies {
 
 
     implementation(libs.androidx.appcompat)
+    implementation("androidx.annotation:annotation:1.8.1")
     // GameActivity provides a SurfaceView host so Kotlin touch controls can safely overlay the Rust renderer.
     implementation("androidx.games:games-activity:4.4.0")
     implementation(libs.androidx.constraintlayout)

@@ -2,12 +2,12 @@
 
 <manifest
     xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+>
 
-    <!-- Required for the user-visible Downloads/Tsukihime Android game-data directory. -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <application 
-        android:allowBackup="true" 
+        android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher" 
         android:roundIcon="@mipmap/ic_launcher" 
         android:label="@string/app_name" 
@@ -16,7 +16,7 @@
         <!-- Winit/Rust game window. The launcher remains a normal Kotlin Activity. -->
         <activity
             android:name=".GameActivity"
-            android:label="Tsukihime Android port"
+            android:label="@string/app_name"
             android:exported="false"
             android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|navigation|uiMode"

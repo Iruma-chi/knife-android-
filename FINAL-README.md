@@ -1,40 +1,49 @@
-# Tsukihime Android port — consolidated Phase 1 + Phase 2 source
+# TsukiPort 0.3.0-dev — current Android source
 
-This archive consolidates the Phase 1 launcher identity/background work and Phase 2 native backlog bridge and launcher save backup work, with the project owner's supplied launcher artwork.
+This source is based on the supplied `knife-android-0.1.5.zip`. It preserves the existing
+gameplay controls, backlog arrows, opacity settings, save/load bridge and save-backup UI.
 
-## Visual identity
-- The asset-access launcher screen uses `app/src/main/res/drawable-nodpi/launcher_background_user.png`, copied byte-for-byte from the project owner's upload.
-- Only `MainActivity` references this background. The game renderer and `GameActivity` do not.
-- Launcher heading and adaptive app icon use the official TSUKIHIME logo image from the official product website.
-- The official logo binary is fetched at build time by `scripts/fetch-official-tsukihime-logo.sh`. The build workflow runs this script before Gradle. For a local build, run the script from the repository root before building.
-- App label: `Tsukihime Android port`.
-- Version: `0.1.5`, versionCode `5`.
+## App identity
 
-## Backlog controls
-- Rust reports the real active backlog screen through an atomic state and JNI getter.
-- Android displays two arrow-only controls vertically stacked at the right edge, only while backlog is active.
-- Tap scrolls one step; holding repeats.
-- Settings include a separate backlog-arrow enable checkbox and independent opacity slider.
-- Existing eight controls and their existing preferences/actions are retained.
+- Display name: TsukiPort
+- Application ID: `com.dev.tsukihimeandroid.dev`
+- Gradle namespace: `com.dev.tsukihimeandroid`
+- Version: `0.3.0-dev` / versionCode `6`
+- ABI: `arm64-v8a`
+- Release APK: unsigned; sign locally with your private Termux key.
 
-## Save backups
-- Import/export is available from the launcher, not while the game is running.
-- Saves remain in the engine's normal app-private `files/knife/...` profile directories; no migration to Downloads or shared storage.
-- Backup ZIP contains a manifest, profile ID, expected byte size and SHA-256.
-- Import rejects unexpected ZIP entries, profile mismatches, size mismatches and checksum failures.
-- Existing saves are copied to a rollback file before atomic replacement.
+## Launcher import
 
-## Build and verification status
-Static checks performed for this archive:
-- 13 XML resources parsed successfully.
-- GitHub Actions workflow YAML parsed successfully.
-- Shell download script passed `bash -n`.
-- Java logo preparation helper compiled and ran headlessly against a test PNG.
-- Source assertions passed for launcher-only background use, app label/version, logo fetch integration, backlog JNI bridge, right-side arrow placement, arrow settings and save backup checks.
+The launcher accepts one base NSP/XCI and optionally one matching update package, including
+split XCI parts. It also asks for `prod.keys`, optional `title.keys`, and the shared system font
+`nintendo_udsg-r_std_003.bfttf`.
 
-Not yet proven in this environment:
-- Full Android Gradle build and APK packaging.
-- ARM64 Rust build and JNI link.
-- Device runtime testing of arrows and save import/export.
+The native importer reads the selected packages through SAF file descriptors, decrypts and
+verifies Switch content, applies a matching BKTR update patch when supplied, and extracts
+RomFS into an app-private staging directory. A separate verify-only pass checks the extracted
+outputs against the importer's CRC journal. The launcher validates core archives, scripts,
+sound data and the font before switching the active RomFS path.
 
-The GitHub Actions `android-arm64.yml` workflow is the required full build verification. Do not uninstall the currently installed working APK until that workflow succeeds and the resulting APK installs.
+The original NSP/XCI and key files are not modified. Keys are not stored or transmitted.
+DLC and optional Chinese system fonts are not included in this first importer milestone.
+
+## Gameplay preservation
+
+`GameActivity.kt`, `SaveBackupManager.kt`, and every file under `engine/` are byte-for-byte
+identical to the supplied 0.1.5 source. Only the launcher and build/import integration changed.
+Knife's WGPU renderer and WGSL shaders remain in place; there is no Maxwell shader translation
+or Switch executable emulation in this architecture.
+
+## Build and signing
+
+Run `.github/workflows/android-arm64.yml` to run host importer tests, build the Rust ARM64
+engine, build the C++ JNI importer with Android NDK CMake, package an unsigned APK, and verify
+native library alignment. Then follow `TERMUX-SIGNING.md` to create a private signing key and
+sign the APK locally.
+
+## Verification status
+
+Host C++ importer tests and a host CMake/JNI build pass. XML, TOML, YAML and shell syntax checks
+pass. The full Gradle/Android NDK/Rust build could not run in the current environment because
+Gradle's distribution server could not be resolved and the Android SDK/NDK and Rust toolchain
+are not installed here. A real Tsukihime package import and gameplay test remain pending.

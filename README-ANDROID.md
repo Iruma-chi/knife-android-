@@ -1,27 +1,71 @@
-# Tsukihime Android 0.1.3 (development)
+# TsukiPort Android build and import notes
 
-## Game data: no-copy mode
+## Import flow
 
-The launcher asks the user to select the existing local extracted RomFS `assets` directory, or its parent directory. It validates the selected folder in place and stores its URI and resolved local filesystem path. It does **not** copy, move, rename, or delete game data. “Forget selected folder” only clears the saved location and releases the persistable URI permission.
+The launcher no longer requests `MANAGE_EXTERNAL_STORAGE` and no longer asks the user to
+manually select an extracted RomFS folder.
 
-The current upstream `knife` engine uses ordinary filesystem paths (`std::fs`) for assets. This first Android storage integration therefore supports the Android ExternalStorageProvider's local shared-storage paths and uses `MANAGE_EXTERNAL_STORAGE` so the Rust process can read those paths. It rejects cloud/document providers because they do not expose normal filesystem paths. A future SAF-backed VFS would remove the broad permission requirement, but that is a separate Rust-engine change.
+1. Select one base-game `.nsp` or `.xci`, or every part of one split XCI.
+2. Select `prod.keys`.
+3. Select `title.keys` only if the dump needs a title key.
+4. Select `nintendo_udsg-r_std_003.bfttf`, the Switch shared system font required by Knife.
+5. Press Prepare Game Data and wait for verification/extraction to finish.
+6. Press Play.
 
-The app expects the selected folder itself to be named `assets`, or to contain an `assets` child. Required initial checks are `nintendo_udsg-r_std_003.bfttf`, `allscr.mrg`, and `script_text.mrg`. The upstream README also describes the game RomFS and font requirements. This is only basic validation, not a complete integrity check.
+Select one base-game package and optionally one matching update package. The importer applies a
+matching update patch when supplied; Knife's engine documentation recommends Tsukihime update
+1.0.3, while noting that earlier game data still plays. DLC is not supported in this milestone.
 
-## Videos
+The native importer requires seekable local file descriptors. Select files stored locally on
+the phone; cloud providers that return non-seekable streams are rejected. The original package
+and key files are read-only and are not copied or modified.
 
-The upstream desktop backends are VideoToolbox (macOS), Media Foundation (Windows), and GStreamer (other desktop platforms). Android uses the NDK MediaCodec backend in `engine/knife/src/movie/android.rs`; actual movie playback still needs device coverage across supported Android codec implementations.
+## Private storage
 
-## Saves
+The importer extracts into app-private storage under `filesDir/tsukihime-import-staging`,
+validates the result, and then switches it into `filesDir/tsukihime-import`. The active RomFS
+path is written to `filesDir/assets-path.txt`, preserving the existing Rust engine handoff.
+A staging directory makes failed imports non-destructive to the previous prepared install.
 
-The upstream engine implements Switch-format `savedata000` with 100 manual save slots, an auto-save ring and a quick-save slot. On Android, the port must explicitly set `--save-file` to an app-private path (for example `filesDir/knife/savedata000` for Japanese, with separate `overseas/savedata000` for overseas data). The engine owns serialization and save/load UI. The app should later expose export/import of these small save files; uninstalling the app otherwise removes app-private saves.
+`prod.keys` and optional `title.keys` are opened only for the import call. Their contents are
+not saved or uploaded. The separately selected standard BFTTF system font is retained in private
+app storage and copied into the prepared RomFS. Additional Chinese-language system fonts are not
+surfaced by this first launcher build.
 
-## Current status
+## Native components
 
-Build #16 successfully packages the Rust ARM64 engine and has been installed by the user; the user confirmed the game launches, renders and accepts touch input. The controls patch described below is a separate, not-yet-built source update.
+- `libmain.so`: the existing Rust Knife engine, built for `arm64-v8a` with `cargo-ndk`.
+- `libnximport.so`: the C++ NSP/XCI importer and JNI bridge, built with Android NDK CMake.
+- `nximport.cpp` and `nxcrypto.cpp`: adapted from the MIT-licensed P5R Android importer.
+- `nximport_jni.cpp`: package-renamed JNI bridge for `com.dev.tsukihimeandroid.NativeImporter`.
 
-## Android virtual controls
+The importer extraction path is deliberately used instead of P5R's direct GameImage runtime.
+Knife currently resolves ordinary filesystem paths for archives and scripts; a virtual RomFS
+filesystem would require a separate, invasive change to its asset-loading abstraction.
 
-The controls patch migrates the existing NativeActivity host to AndroidX GameActivity. It uses Winit 0.30.13's `android-game-activity` backend and `androidx.games:games-activity:4.4.0`. GameActivity hosts the Rust renderer in a `SurfaceView`, allowing the Kotlin controls overlay and its Controls settings dialog to render above the game without replacing Winit's input path. The controls call a small JNI bridge that queues typed actions through Winit's `EventLoopProxy`; Knife handles them on its game thread using its existing Pad, quick-save/load and menu actions. The overlay does not synthesize keyboard events or touch game state from the Android UI thread.
+## Build from CI
 
-See `ANDROID-CONTROLS-IMPLEMENTATION.md` for the control map, settings and validation status. The source patch still requires the project's GitHub Actions ARM64 build and device testing before it can be treated as a release APK.
+Run `.github/workflows/android-arm64.yml`. It installs JDK 17, Gradle 9.6.1, Android SDK 36,
+NDK 28.2.13676358 and CMake 3.22.1; runs host importer tests; builds the Rust ARM64 engine;
+runs `gradle :app:assembleRelease`, and checks APK ZIP alignment plus every packaged ARM64
+ELF load segment for 16 KiB alignment. The artifact is unsigned.
+
+Kotlin Gradle Plugin 2.4.21 is used with AGP 9.3.1; the Kotlin compatibility table lists
+AGP 9.3.1 and Gradle through 9.7.0 as fully supported for KGP 2.4.20–2.4.21.
+
+## Sign locally
+
+Follow `TERMUX-SIGNING.md`. Keep the keystore and passwords in Termux's private home directory.
+Never upload them to the repository or ChatGPT.
+
+## Existing gameplay
+
+The following files were compared byte-for-byte with the supplied `knife-android-0.1.5`
+baseline and must remain unchanged by this importer work:
+
+- `app/src/main/java/com/dev/tsukihimeandroid/GameActivity.kt`
+- `app/src/main/java/com/dev/tsukihimeandroid/SaveBackupManager.kt`
+- all files under `engine/`
+
+These contain the existing in-game touch controls, backlog controls, save/quick-save/load
+bridge, game logic, renderer and audio implementation.

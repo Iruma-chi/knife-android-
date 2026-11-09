@@ -3,4 +3,9 @@ build/
 **/build/
 local.properties
 *.keystore
+*.jks
+*.p12
 release.properties
+
+# Generated ARM64 native libraries from Cargo/NDK builds.
+app/src/main/jniLibs/
