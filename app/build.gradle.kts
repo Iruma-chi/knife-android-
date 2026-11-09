@@ -29,8 +29,8 @@ android {
         applicationId = "com.dev.tsukihimeandroid.dev"
         minSdk = 31 
         targetSdk = 36  
-        versionCode = 6
-        versionName = "0.3.0-dev"
+        versionCode = 7
+        versionName = "0.4.0"
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild {
             cmake {

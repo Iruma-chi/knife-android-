@@ -92,15 +92,15 @@ jobs:
             --ks-key-alias "$ANDROID_KEY_ALIAS" \
             --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
             --key-pass env:ANDROID_KEY_PASSWORD \
-            --out dist/TsukiPort-0.3.0-dev-arm64-signed.apk \
+            --out dist/TsukiPort-0.4.0-arm64-signed.apk \
             app/build/outputs/apk/release/app-release-unsigned.apk
 
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify \
             --verbose \
             --print-certs \
-            dist/TsukiPort-0.3.0-dev-arm64-signed.apk
+            dist/TsukiPort-0.4.0-arm64-signed.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: TsukiPort-0.3.0-dev-arm64-signed
-          path: dist/TsukiPort-0.3.0-dev-arm64-signed.apk
+          name: TsukiPort-0.4.0-arm64-signed
+          path: dist/TsukiPort-0.4.0-arm64-signed.apk
