@@ -1052,42 +1052,44 @@ fn android_main(android_app: AndroidApp) {
     let result = (|| -> Result<()> {
         let data_dir = android_app.internal_data_path()
             .context("Android did not provide the app's internal files directory")?;
-        let config = data_dir.join("assets-path.txt");
-        let assets_path = std::fs::read_to_string(&config)
-            .with_context(|| format!("No selected game data. Expected {}. Return to the launcher and select your assets folder.", config.display()))?;
-        let assets_path = std::path::PathBuf::from(assets_path.trim());
-        anyhow::ensure!(assets_path.is_dir(), "Selected assets folder no longer exists: {}", assets_path.display());
 
-        // A package-only launch uses a small fallback directory containing the shared system
-        // font. If SAF/JNI package installation failed, do not continue into Game::load_fonts
-        // with that incomplete directory: report the missing package instead of starting an
-        // engine with no game archives.
+        // Package mode is independent of the extracted-game path. The launcher creates this
+        // small directory and places the legally supplied Switch shared font there; all game
+        // archives and metadata are read through PackageImage::open_reader instead of being
+        // copied into a second full-size game directory.
         let package = package_reader::current();
-        if package.is_none() {
+        let assets_path = if package.is_some() {
+            let fallback = data_dir.join("package-fallback");
+            anyhow::ensure!(fallback.is_dir(),
+                "The package fallback directory is missing. Return to the launcher and select the NSP/XCI and system font again.");
+            fallback
+        } else {
+            let config = data_dir.join("assets-path.txt");
+            let assets_path = std::fs::read_to_string(&config)
+                .with_context(|| format!("No selected game data. Expected {}. Return to the launcher and select your assets folder.", config.display()))?;
+            let assets_path = std::path::PathBuf::from(assets_path.trim());
+            anyhow::ensure!(assets_path.is_dir(), "Selected assets folder no longer exists: {}", assets_path.display());
+
+            // Do not let a missing/failed package silently start the engine with the tiny
+            // package-fallback directory as if it were a complete extracted installation.
             let overseas = assets_path.join("w_allpac.nam").is_file();
             let witch = assets_path.join("jallpac.nam").is_file();
             let allpac = if overseas { "w_allpac" } else if witch { "jallpac" } else { "allpac" };
             let allui = if overseas { "w_allui" } else { "allui" };
             let sound = if witch { "witch.bfsar" } else { "knife1.bfsar" };
             let required = [
-                "allscr.mrg".to_string(),
-                "script_text.mrg".to_string(),
-                format!("{allpac}.hed"),
-                format!("{allpac}.mrg"),
-                format!("{allui}.hed"),
-                format!("{allui}.mrg"),
-                sound.to_string(),
+                "allscr.mrg".to_string(), "script_text.mrg".to_string(),
+                format!("{allpac}.hed"), format!("{allpac}.mrg"),
+                format!("{allui}.hed"), format!("{allui}.mrg"), sound.to_string(),
             ];
             let missing: Vec<_> = required.iter()
                 .filter(|name| !assets_path.join(name.as_str()).is_file())
-                .map(|name| name.as_str())
-                .collect();
-            anyhow::ensure!(
-                missing.is_empty(),
-                "No NSP/XCI package was installed and the extracted fallback is incomplete (missing: {}). Return to the launcher, reselect the package and keys, or use PREPARE GAME DATA.",
-                missing.join(", ")
-            );
-        }
+                .map(|name| name.as_str()).collect();
+            anyhow::ensure!(missing.is_empty(),
+                "No NSP/XCI package was installed and extracted game data is incomplete (missing: {}). Reselect the package and keys, or use PREPARE GAME DATA.",
+                missing.join(", "));
+            assets_path
+        };
 
         let cli = Cli::try_parse_from([
             std::ffi::OsString::from("knife"),
