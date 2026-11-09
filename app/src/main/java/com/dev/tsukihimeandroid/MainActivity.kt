@@ -130,7 +130,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
             background = LayerDrawable(arrayOf(
                 BitmapDrawable(resources, BitmapFactory.decodeResource(resources, R.drawable.launcher_background)).apply {
-                    gravity = android.graphics.Gravity.FILL
+                    gravity = Gravity.FILL
                 },
                 ColorDrawable(0x52061122)
             ))
