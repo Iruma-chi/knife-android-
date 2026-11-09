@@ -95,7 +95,7 @@ impl PackageImage {
             .zip(inputs)
             .map(|(name, (_, fd))| NativeInput { name: name.as_ptr(), fd: *fd })
             .collect();
-        let mut error = [0i8; 1024];
+        let mut error = [0 as c_char; 1024];
         // SAFETY: arrays remain alive for the call; the native function copies names and duplicates FDs.
         let handle = unsafe {
             nxi_game_open(native_inputs.as_ptr(), native_inputs.len(), title_id, error.as_mut_ptr(), error.len())
@@ -143,7 +143,7 @@ impl PackageImage {
         ensure!(count <= 1_000_000, "native RomFS directory returned an unreasonable child count");
         let mut children = Vec::with_capacity(count);
         for index in 0..count {
-            let mut name = vec![0i8; 4096];
+            let mut name = vec![0 as c_char; 4096];
             let mut entry = NativeEntry::default();
             // SAFETY: buffers and pointers remain valid for the call; native function bounds-checks index.
             let rc = unsafe {
@@ -265,7 +265,7 @@ impl ReadAt for PackageFile {
         if destination.is_empty() { return Ok(()); }
         let path = CString::new(self.path.as_bytes()).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "RomFS path contains NUL"))?;
         let native = self.image.native.lock().map_err(|_| io::Error::other("native game-image lock poisoned"))?;
-        let mut error = [0i8; 512];
+        let mut error = [0 as c_char; 512];
         // SAFETY: handle, path, and destination remain valid for the call; native read is bounded.
         let count = unsafe {
             nxi_game_read(native.0.as_ptr(), path.as_ptr(), offset, destination.as_mut_ptr().cast(), length, error.as_mut_ptr(), error.len())
