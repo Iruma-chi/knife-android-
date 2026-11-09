@@ -394,12 +394,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun isValidBfttf(file: File): Boolean {
-        if (!file.isFile || file.length() < 8L) return false
-        val magic = file.inputStream().use { input ->
-            ByteArray(4).also { require(input.read(it) == 4) }
-        }
-        return magic.contentEquals(byteArrayOf(0x36, 0xF8.toByte(), 0x1A, 0x1E))
+    if (!file.isFile || file.length() < 8L) return false
+    val magic = file.inputStream().use { input ->
+        ByteArray(4).also { require(input.read(it) == 4) }
     }
+    val encryptedBfttf = magic.contentEquals(byteArrayOf(0x36, 0xF8.toByte(), 0x1A, 0x1E))
+    val plainTrueType = magic.contentEquals(byteArrayOf(0x00, 0x01, 0x00, 0x00))
+    return encryptedBfttf || plainTrueType
+}
 
     private fun prepareGame() {
         if (importing) return
