@@ -1,78 +1,147 @@
-# TsukiPort 0.3.0-dev
+🌙 TsukiPort
 
-🌙 **Tsukihime — Android Port**
+Tsukihime, now on Android.
 
-An independent ARM64 Android port built around the Tsukihime-specific Knife engine.
+A native Android ARM64 port of Tsukihime, powered by the Rust-based Knife engine.
 
-TsukiPort adds a native package-first NSP/XCI asset path while retaining the existing extraction importer as a fallback and preserving the Knife gameplay engine and Android in-game controls.
+TsukiPort brings Tsukihime -A piece of blue glass moon- to Android devices without requiring a PC or an external Nintendo Switch emulator for game-data preparation.
 
-## Project Highlights
-
-- Native Android ARM64 application.
-- Rust-powered Knife engine.
-- Customizable touchscreen controls.
-- Backlog navigation and opacity settings.
-- Save management and backup support.
-- Native NSP/XCI package importer.
-- Optional matching game update support.
-
-## Architecture
-
-- Select a legally dumped base-game NSP/XCI and optional matching update.
-- Select your own `prod.keys` and optional `title.keys`.
-- Select the required Switch shared system font.
-- Direct mode passes SAF file descriptors to the native C++ RomFS reader and serves game assets to Knife on demand.
-- The extraction importer remains available as a fallback and diagnostic route.
-- Only individual files that require filesystem paths are lazily cached; direct mode does not extract the full RomFS.
-
-This is not a general-purpose Nintendo Switch emulator. Knife remains the Tsukihime-specific engine and WGPU renderer.
-
-## Installation Requirements
-
-You need:
-
-- Your own legally dumped Tsukihime Switch base-game NSP/XCI.
-- Your own `prod.keys` and, if required by your dump, `title.keys`.
-- The Switch shared system font:
-  `nintendo_udsg-r_std_003.bfttf`
-- An ARM64 Android device.
-
-A matching official update package is optional. DLC is not supported in this development milestone.
-
-No game ROMs, firmware, keys or copyrighted game assets are included.
-
-## Build and Signing
-
-The GitHub Actions workflow builds the ARM64 Rust engine, native C++ importer and unsigned Android APK.
-
-Builds are manually triggered through GitHub Actions.
-
-The APK is signed separately using the developer's private signing key. See `TERMUX-SIGNING.md`.
-
-Application ID: `com.dev.tsukihimeandroid.dev`
-
-Gradle namespace: `com.dev.tsukihimeandroid`
-
-## Project Status
-
-This is an experimental development build.
-
-Host importer tests, strict GCC/Clang C++ checks, UBSan and a host compile of the JNI shim have passed. Rust compilation, Android NDK/Gradle packaging and real-device direct-package testing are still pending.
-
-Do not consider this a verified playable release yet.
-
-## Credits and Acknowledgements
-
-- [AuroraWright](https://github.com/AuroraWright) — Original Knife engine and foundational work.
-- Type-Moon — Creators of Tsukihime -A piece of blue glass moon-.
-- Persona 5 Royal Android importer contributors — MIT-licensed importer components used in this project. See `THIRD_PARTY_NOTICES`.
-
-## Development Disclosure
-
-This project was developed through independent coding, technical decisions, experimentation and implementation, with AI tools assisting with coding support, debugging, research and refinement.
-
-The integration, direction and development decisions remain part of this project's work.
+Select your own NSP or XCI game dump, let TsukiPort handle the decryption and ROMFS extraction directly on your device, and get your game ready to play.
 
 ---
 
-An independent community project. Not affiliated with or endorsed by Type-Moon.
+✨ What's New — Direct Game Preparation
+
+No PC. No external emulator. No manual extraction.
+
+TsukiPort now includes an integrated game preparation system.
+
+You no longer need to extract ROMFS on a computer, transfer thousands of files to your phone, or configure an external emulator just to prepare your game data.
+
+Everything happens directly on your Android device.
+
+How it works:
+
+1. Open TsukiPort.
+2. Select your legally obtained Nintendo Switch game dump (".NSP" or ".XCI").
+3. Provide the required decryption keys when prompted.
+4. Optionally select the matching game update, if supported and available.
+5. Start Prepare Game Data.
+6. TsukiPort handles decryption and ROMFS extraction on-device.
+7. Once preparation finishes, your game data is ready. Launch Tsukihime and play!
+
+💾 Important: Storage Requirements
+
+Game preparation requires substantial temporary storage.
+
+Requirement| Details
+Recommended free space| At least 45–50 GB
+Game dump| Your own NSP or XCI
+Preparation| On-device decryption and ROMFS extraction
+After preparation| Original game dump can be deleted
+Potential storage recovered| Approximately 23 GB, depending on the dump
+
+Please read before starting:
+
+- Ensure that your device has at least 45–50 GB of free storage before beginning.
+- Do not interrupt the preparation process.
+- Keep the original game dump until preparation completes successfully.
+- Once the game data has been prepared and verified, you can delete the original NSP/XCI file to recover storage space.
+
+The extracted game data remains available for gameplay, so you don't need to retain the original dump just to launch the game.
+
+---
+
+🎮 Features
+
+- Native Android ARM64 — Designed to run directly on Android.
+- Integrated NSP/XCI Importer — Select your own game dump from within the application.
+- On-device Decryption — Prepare encrypted game data without an external emulator.
+- Direct ROMFS Extraction — Extract the required game files on your phone.
+- Optional Game Updates — Support for selecting a matching game update where available.
+- Custom Touch Controls — Mobile-friendly controls with customization options.
+- Backlog Navigation — Dedicated scrolling controls for dialogue history.
+- Save Management — Backup and restoration functionality.
+- Android File Access — Select and manage game files through Android's file picker.
+
+---
+
+📱 Requirements
+
+- An Android device with ARM64-v8a support.
+
+- A legally obtained Nintendo Switch copy of Tsukihime -A piece of blue glass moon-.
+
+- The required Nintendo decryption keys ("prod.keys" and "title.keys", as applicable to your dump and preparation flow).
+
+- At least 45–50 GB of available storage for initial game preparation.
+
+- The required Nintendo system font:
+  
+  "nintendo_udsg-r_std_003.bfttf"
+
+Important: TsukiPort does not include or distribute the original game, copyrighted game assets, or Nintendo decryption keys. You must supply your own legally obtained files.
+
+---
+
+📥 Installation
+
+1. Visit the "GitHub Releases page" (https://github.com/Iruma-chi/knife-android-/releases).
+2. Download the latest TsukiPort APK.
+3. Install it on your Android device.
+4. Open TsukiPort and follow the in-app game preparation instructions.
+5. Select your NSP/XCI file and provide the required keys and font.
+6. Start the preparation process and wait for it to complete.
+7. Launch the game!
+
+You no longer need to prepare an "assets" folder manually on your PC.
+
+---
+
+⚙️ Technical Information
+
+Component| Details
+Application| TsukiPort
+Package| Android
+Architecture| ARM64-v8a
+Engine| Knife
+Engine language| Rust
+Game input| NSP / XCI
+Game preparation| On-device
+Extraction| ROMFS
+
+---
+
+🚧 Development Status
+
+TsukiPort has reached a stage where the game is playable , although I haven't reached end.
+The upcoming updates may happen when i have some free time.
+
+The integrated game preparation workflow and Android port are evolving. Some features may still be experimental, and compatibility may vary depending on the game dump, update version, device hardware, and available storage.
+
+Bug reports, testing feedback, and constructive contributions are welcome.
+
+If you encounter an issue, please include:
+
+- The stage at which the problem occurred.
+- Relevant error messages or logs.
+
+
+
+---
+
+🙏 Credits & Acknowledgements
+
+- "AuroraWright" (https://github.com/AuroraWright) — Original Knife engine and foundational work.
+- "Type-Moon" (https://typemoon.com/) — Creators of Tsukihime -A piece of blue glass moon-.
+- Contributors and developers whose work made this project possible.
+
+🤖 Development Disclosure
+
+TsukiPort was developed through my own coding skills, technical decisions, experimentation, implementation, and testing, with AI tools assisting throughout the development process.
+
+AI assistance was used for debugging, troubleshooting, and refinement. The project's direction, integration, implementation decisions, and testing were carried out as part of my development work.
+
+---
+
+TsukiPort is an independent community project. It is not affiliated with, endorsed by, or sponsored by Type-Moon 
