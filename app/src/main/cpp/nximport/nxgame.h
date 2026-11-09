@@ -1,7 +1,7 @@
-// The player's NSP or XCI used in place, without extracting it (the P5R port reads its game from it): the base
-// program's ExeFS files, and its RomFS decrypted on the fly at each read. The RomFS is not hash-checked here (the
-// import checks the dump once); the ExeFS is. Reads are thread safe (pread, no shared buffers). The base game only: an
-// update is not applied. Built from the importer's own pieces (nximport.cpp).
+// The player's NSP or XCI used in place, without extracting it: the selected program's ExeFS and RomFS are
+// decrypted on demand. A matching program update is overlaid through the existing BKTR storage implementation.
+// ExeFS hashes are checked; RomFS integrity is expected to have been checked by the importer. Reads use positional
+// storage operations and do not share a mutable file cursor. Built from the importer's own pieces (nximport.cpp).
 #pragma once
 
 #include <cstdint>
@@ -36,6 +36,8 @@ public:
     size_t file_count() const;
     // Bytes of a RomFS file from `off`, clipped to its size. The count read (0 past the end or on a read error).
     uint64_t read(const Entry& file, uint64_t off, void* dst, uint64_t n) const;
+    // On failure returns 0 and fills error; a clean EOF returns 0 with an empty error.
+    uint64_t read(const Entry& file, uint64_t off, void* dst, uint64_t n, std::string& error) const;
 
 private:
     GameImage();

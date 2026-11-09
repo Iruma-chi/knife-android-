@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "nximport.h"
+#include "nxgame_c.h"
 #include <iostream>
 
 
@@ -123,6 +124,25 @@ bool has(const std::string& s, const char* t) { return s.find(t) != std::string:
 }  // namespace
 
 int main() {
+    {
+        char error[96] = {};
+        nxi_game_image* image = nxi_game_open(nullptr, 0, 0, error, sizeof(error));
+        const bool rejected = image == nullptr && std::string(error).find("no package inputs") != std::string::npos;
+        printf("%s C ABI rejects an empty package input list\n", rejected ? "ok  " : "FAIL");
+        if (!rejected) ++fails;
+        nxi_game_close(image);
+        char child_name[16] = {};
+        nxi_game_entry child_entry{};
+        if (nxi_game_title_id(nullptr) != 0 || nxi_game_file_count(nullptr) != 0 ||
+            nxi_game_stat(nullptr, "CPK/ALL_USEU.CPK", nullptr) != -1 ||
+            nxi_game_list_count(nullptr, "") != 0 ||
+            nxi_game_list_name(nullptr, "", 0, child_name, sizeof(child_name), &child_entry) != -1) {
+            printf("FAIL C ABI handles null image handles safely\n");
+            ++fails;
+        } else {
+            printf("ok  C ABI handles null image handles safely\n");
+        }
+    }
     if (nxi::Options{}.apply_update) {
         std::cerr << "FAIL update application must default to disabled\n";
         return 1;

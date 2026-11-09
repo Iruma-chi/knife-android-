@@ -71,6 +71,7 @@ class MainActivity : AppCompatActivity() {
     }
     private val prodKeysPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
+            rememberKeyUri(uri, "prod_keys_uri")
             selectedProdKeysUri = uri
             prodKeysButton.text = "PROD.KEYS SELECTED"
             refreshButtons()
@@ -79,6 +80,7 @@ class MainActivity : AppCompatActivity() {
     }
     private val titleKeysPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
+            rememberKeyUri(uri, "title_keys_uri")
             selectedTitleKeysUri = uri
             titleKeysButton.text = "TITLE.KEYS SELECTED (OPTIONAL)"
             updateStatus()
@@ -99,11 +101,15 @@ class MainActivity : AppCompatActivity() {
         selectedGameUris = prefs.getStringSet("game_uris", mutableSetOf<String>()).orEmpty().mapNotNull {
             runCatching { Uri.parse(it) }.getOrNull()
         }
+        selectedProdKeysUri = prefs.getString("prod_keys_uri", null)?.let { runCatching { Uri.parse(it) }.getOrNull() }
+        selectedTitleKeysUri = prefs.getString("title_keys_uri", null)?.let { runCatching { Uri.parse(it) }.getOrNull() }
         importer = runCatching { NativeImporter() }.getOrElse {
             Log.e(TAG, "Native importer is unavailable", it)
             null
         }
         buildScreen()
+        if (selectedProdKeysUri != null) prodKeysButton.text = "PROD.KEYS SELECTED"
+        if (selectedTitleKeysUri != null) titleKeysButton.text = "TITLE.KEYS SELECTED (OPTIONAL)"
         updateStatus()
         refreshButtons()
     }
@@ -216,13 +222,35 @@ class MainActivity : AppCompatActivity() {
             text = "PLAY TSUKIHIME"
             setOnClickListener {
                 val path = prefs.getString("assets_path", null)
-                if (path == null || !validateAssets(File(path)).first ||
-                    !File(filesDir, "assets-path.txt").isFile) {
-                    status.text = "Prepare and validate the game data before playing."
+                val extractedReady = path != null && validateAssets(File(path)).first &&
+                    File(filesDir, "assets-path.txt").isFile
+                val packageReady = selectedGameUris.isNotEmpty() && selectedProdKeysUri != null &&
+                    systemFontSource.isFile && isValidBfttf(systemFontSource)
+                if (!extractedReady && !packageReady) {
+                    status.text = "Prepare game data or select your NSP/XCI, prod.keys and Switch system font first."
                 } else if (!nativeEngineAvailable()) {
                     status.text = "The Rust Knife engine is not packaged. Run the ARM64 build workflow first."
                 } else {
-                    startActivity(Intent(this@MainActivity, GameActivity::class.java))
+                    val launch = Intent(this@MainActivity, GameActivity::class.java)
+                    if (packageReady) {
+                        val extractedPath = prefs.getString("assets_path", null)
+                        val fallbackRoot = extractedPath?.let(::File)?.takeIf { validateAssets(it).first }
+                            ?: File(filesDir, "package-fallback").apply { mkdirs() }
+                        if (fallbackRoot.name == "package-fallback") {
+                            systemFontSource.copyTo(File(fallbackRoot, SYSTEM_FONT), overwrite = true)
+                        }
+                        File(filesDir, "assets-path.txt").writeText(fallbackRoot.canonicalPath)
+                        val uris = selectedGameUris.map { it.toString() } + listOfNotNull(
+                            selectedProdKeysUri?.toString(), selectedTitleKeysUri?.toString()
+                        )
+                        val names = selectedGameUris.map { displayName(it) } + listOfNotNull(
+                            "prod.keys".takeIf { selectedProdKeysUri != null },
+                            "title.keys".takeIf { selectedTitleKeysUri != null }
+                        )
+                        launch.putStringArrayListExtra("package_uris", ArrayList(uris))
+                        launch.putStringArrayListExtra("package_names", ArrayList(names))
+                    }
+                    startActivity(launch)
                 }
             }
         }
@@ -287,6 +315,15 @@ class MainActivity : AppCompatActivity() {
         setContentView(scroll)
     }
 
+    private fun rememberKeyUri(uri: Uri, preference: String) {
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: SecurityException) {
+            // A transient grant can still be used in the current activity session.
+        }
+        prefs.edit().putString(preference, uri.toString()).apply()
+    }
+
     private fun rememberGameFiles(uris: List<Uri>) {
         val names = uris.map { displayName(it) }
         val invalid = names.filterNot(::isSupportedGameFile)
@@ -312,6 +349,7 @@ class MainActivity : AppCompatActivity() {
             }
             if (uris.map { it.toString() }.toSet() != selectedGameUris.map { it.toString() }.toSet()) {
                 selectedTitleKeysUri = null
+                prefs.edit().remove("title_keys_uri").apply()
                 titleKeysButton.text = "SELECT TITLE.KEYS (OPTIONAL)"
             }
             selectedGameUris = uris
@@ -571,8 +609,10 @@ class MainActivity : AppCompatActivity() {
                 "Game data is prepared, but the Rust Knife engine is not packaged in this APK."
             path != null ->
                 "Previously prepared game data is incomplete: ${check?.second ?: "unknown error"}"
+            selectedGameUris.isNotEmpty() && selectedProdKeysUri != null && systemFontSource.isFile && isValidBfttf(systemFontSource) && nativeEngineAvailable() ->
+                "Game package and keys selected. Ready for direct package launch; extraction remains available as a fallback."
             selectedGameUris.isNotEmpty() ->
-                "Game package selected. Select prod.keys and the required Switch system font, then prepare."
+                "Game package selected. Select prod.keys and the required Switch system font, then prepare or launch directly."
             else -> "Choose your base-game NSP/XCI, prod.keys and Switch shared system font."
         }
     }
@@ -598,8 +638,11 @@ class MainActivity : AppCompatActivity() {
         }
         if (::playButton.isInitialized) {
             val path = prefs.getString("assets_path", null)
-            playButton.isEnabled = !importing && path != null && validateAssets(File(path)).first &&
-                File(filesDir, "assets-path.txt").isFile && nativeEngineAvailable()
+            val extractedReady = path != null && validateAssets(File(path)).first &&
+                File(filesDir, "assets-path.txt").isFile
+            val packageReady = selectedGameUris.isNotEmpty() && selectedProdKeysUri != null &&
+                systemFontSource.isFile && isValidBfttf(systemFontSource)
+            playButton.isEnabled = !importing && (extractedReady || packageReady) && nativeEngineAvailable()
         }
         if (::forgetButton.isInitialized) forgetButton.isEnabled = !importing &&
             (prefs.getString("assets_path", null) != null || outputDirectory.exists() || stagingDirectory.exists())

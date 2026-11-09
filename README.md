@@ -4,7 +4,7 @@
 
 An independent ARM64 Android port built around the Tsukihime-specific Knife engine.
 
-TsukiPort introduces native NSP/XCI game-data preparation while preserving the existing Knife gameplay engine and Android in-game controls.
+TsukiPort adds a native package-first NSP/XCI asset path while retaining the existing extraction importer as a fallback and preserving the Knife gameplay engine and Android in-game controls.
 
 ## Project Highlights
 
@@ -21,10 +21,11 @@ TsukiPort introduces native NSP/XCI game-data preparation while preserving the e
 - Select a legally dumped base-game NSP/XCI and optional matching update.
 - Select your own `prod.keys` and optional `title.keys`.
 - Select the required Switch shared system font.
-- The native C++ importer decrypts, verifies and extracts game data into app-private storage.
-- The existing Rust Knife engine reads the prepared game data.
+- Direct mode passes SAF file descriptors to the native C++ RomFS reader and serves game assets to Knife on demand.
+- The extraction importer remains available as a fallback and diagnostic route.
+- Only individual files that require filesystem paths are lazily cached; direct mode does not extract the full RomFS.
 
-The importer is a preparation component, not a general-purpose Nintendo Switch emulator. The existing renderer, scripts, audio, saves and in-game controls remain unchanged.
+This is not a general-purpose Nintendo Switch emulator. Knife remains the Tsukihime-specific engine and WGPU renderer.
 
 ## Installation Requirements
 
@@ -56,7 +57,7 @@ Gradle namespace: `com.dev.tsukihimeandroid`
 
 This is an experimental development build.
 
-Host importer tests and host JNI compilation have passed. Android NDK/Gradle/Rust packaging, real-device importing and gameplay testing are still pending.
+Host importer tests, strict GCC/Clang C++ checks, UBSan and a host compile of the JNI shim have passed. Rust compilation, Android NDK/Gradle packaging and real-device direct-package testing are still pending.
 
 Do not consider this a verified playable release yet.
 

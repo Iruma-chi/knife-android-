@@ -104,13 +104,32 @@ struct Storage {
 };
 
 struct FdStorage : Storage {
-    int fd;
+    int fd = -1;
     std::string name;
-    FdStorage(int f, std::string n) : fd(f), name(std::move(n)) {
+    // InputFile descriptors are borrowed from JNI/SAF. Duplicate them so Storage owns a stable handle
+    // for its complete lifetime, independent of the caller closing the original descriptor.
+    FdStorage(int borrowed_fd, std::string n) : name(std::move(n)) {
+        fd = dup(borrowed_fd);
+        if (fd < 0) fail("%s: cannot duplicate input descriptor (%s)", name.c_str(), strerror(errno));
+        const int flags = fcntl(fd, F_GETFD);
+        if (flags >= 0) (void)fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
         struct stat st{};
-        if (fstat(fd, &st) != 0) fail("%s: cannot stat (%s)", name.c_str(), strerror(errno));
+        if (fstat(fd, &st) != 0) {
+            const int saved_errno = errno;
+            close(fd);
+            fd = -1;
+            fail("%s: cannot stat (%s)", name.c_str(), strerror(saved_errno));
+        }
+        if (st.st_size < 0) {
+            close(fd);
+            fd = -1;
+            fail("%s: input has a negative size", name.c_str());
+        }
         size = uint64_t(st.st_size);
     }
+    ~FdStorage() override { if (fd >= 0) close(fd); }
+    FdStorage(const FdStorage&) = delete;
+    FdStorage& operator=(const FdStorage&) = delete;
     void read(uint64_t off, void* dst, size_t n) override {
         if (off + n > size) fail("%s: read past the end (offset %llu)", name.c_str(), (unsigned long long)off);
         uint8_t* p = static_cast<uint8_t*>(dst);
@@ -1466,25 +1485,23 @@ int run_import(const std::vector<InputFile>& inputs, const Options& opt, std::st
 // ---- the game read in place (nxgame.h) ----
 
 struct GameImage::Impl {
+    // Keep every parsed NCA alive: sparse and BKTR Storage objects refer to their owning NCA's
+    // file/key and to the base storage. Destruction order is controlled by this owning vector.
     std::vector<std::unique_ptr<Storage>> files;
-    std::unique_ptr<Nca> base;
+    std::vector<std::unique_ptr<Nca>> ncas;
+    Nca* base = nullptr;
+    Nca* patch = nullptr;
+    Storage* romfs = nullptr;  // points into base/patch->owned; valid while ncas lives
     uint64_t title = 0;
     std::map<std::string, std::vector<uint8_t>> exefs;
-    // RomFS: section `sec` of `base`, its data level at `level_off` in the section, the file data at `data_off` in it
     int sec = -1;
     uint64_t level_off = 0, level_size = 0, data_off = 0;
-    std::map<std::string, Entry> entries;                  // every file and folder (folders: dir = true)
-    std::map<std::string, std::vector<std::string>> kids;  // folder -> its children's names
+    std::map<std::string, Entry> entries;
+    std::map<std::string, std::vector<std::string>> kids;
 
-    // Bytes of the section's decrypted data at [pos, pos + n): no shared state, so any thread may read.
     void read_section(uint64_t pos, void* dst, size_t n) const {
-        const Section& s = base->sec[sec];
-        if (s.crypt() == 1) {
-            base->file->read(s.off + pos, dst, n);
-            return;
-        }
-        std::vector<uint8_t> buf;
-        ctr_read(base->file.get(), s.off + pos, s.off + pos, base->key, s.upper, dst, n, buf);
+        if (!romfs) fail("RomFS reader is not initialized");
+        romfs->read(pos, dst, n);
     }
 };
 
@@ -1513,17 +1530,28 @@ std::vector<std::pair<std::string, GameImage::Entry>> GameImage::list(const std:
 }
 
 uint64_t GameImage::read(const Entry& file, uint64_t off, void* dst, uint64_t n) const {
-    if (file.dir || off >= file.size) return 0;
+    std::string ignored;
+    return read(file, off, dst, n, ignored);
+}
+
+uint64_t GameImage::read(const Entry& file, uint64_t off, void* dst, uint64_t n, std::string& error) const {
+    error.clear();
+    if (file.dir || off >= file.size || n == 0) return 0;
+    if (!dst) { error = "null destination for non-empty RomFS read"; return 0; }
     n = std::min(n, file.size - off);
     try {
         impl_->read_section(impl_->level_off + impl_->data_off + file.off + off, dst, size_t(n));
         return n;
-    } catch (const Fail&) {
-        return 0;
+    } catch (const Fail& e) {
+        error = e.what();
+    } catch (const std::exception& e) {
+        error = e.what();
     }
+    return 0;
 }
 
 std::unique_ptr<GameImage> GameImage::open(const std::vector<InputFile>& inputs, uint64_t title_id, std::string& error) {
+    error.clear();
     std::unique_ptr<GameImage> g(new GameImage());
     Impl& im = *g->impl_;
     try {
@@ -1536,6 +1564,7 @@ std::unique_ptr<GameImage> GameImage::open(const std::vector<InputFile>& inputs,
             bool xci;
         };
         std::vector<Cont> conts;
+        std::map<std::string, std::map<int, Storage*>> split_parts;
         for (const InputFile& in : inputs) {
             std::string n = lower(in.name);
             if (n == "prod.keys" || n == "keys.txt" || n == "keys.dat") {
@@ -1545,10 +1574,43 @@ std::unique_ptr<GameImage> GameImage::open(const std::vector<InputFile>& inputs,
             } else if (n == "title.keys") {
                 FdStorage s(in.fd, in.name);
                 keys.load_title(read_small(s, 4 << 20));
-            } else if (ends_with(n, ".nsp") || ends_with(n, ".xci")) {
+            } else {
+                bool is_container = ends_with(n, ".nsp") || ends_with(n, ".xci");
+                size_t digit = n.size();
+                while (digit > 0 && isdigit(uint8_t(n[digit - 1]))) --digit;
+                size_t stem_end = std::string::npos;
+                if (!is_container && digit < n.size() && digit >= 3 &&
+                    n.compare(digit - 3, 3, ".xc") == 0 && n.size() - digit == 1) {
+                    stem_end = digit - 3;
+                } else if (!is_container && digit < n.size() && digit >= 5 &&
+                           n.compare(digit - 5, 5, ".xci.") == 0) {
+                    stem_end = digit - 5;
+                }
+                if (!is_container && stem_end == std::string::npos) continue;
                 im.files.push_back(std::make_unique<FdStorage>(in.fd, in.name));
-                conts.push_back({in.name, im.files.back().get(), ends_with(n, ".xci")});
+                Storage* storage = im.files.back().get();
+                if (is_container) {
+                    conts.push_back({in.name, storage, ends_with(n, ".xci")});
+                } else {
+                    const int part = int(strtol(n.c_str() + digit, nullptr, 10));
+                    auto& parts = split_parts[in.name.substr(0, stem_end)];
+                    if (!parts.emplace(part, storage).second)
+                        fail("%s: duplicate split XCI part %d", in.name.substr(0, stem_end).c_str(), part);
+                }
             }
+        }
+        for (auto& [stem, parts] : split_parts) {
+            if (parts.empty() || parts.begin()->first != 0)
+                fail("%s: the first split XCI part (.xc0 / .xci.00) is missing", stem.c_str());
+            std::vector<Storage*> ordered;
+            int expected = 0;
+            for (const auto& [index, storage] : parts) {
+                if (index != expected++)
+                    fail("%s: split XCI part numbering has a gap", stem.c_str());
+                ordered.push_back(storage);
+            }
+            im.files.push_back(std::make_unique<CatStorage>(std::move(ordered)));
+            conts.push_back({stem + ".xci", im.files.back().get(), true});
         }
         if (!have_prod) fail("prod.keys is missing");
         if (conts.empty()) fail("no .nsp or .xci file");
@@ -1587,28 +1649,62 @@ std::unique_ptr<GameImage> GameImage::open(const std::vector<InputFile>& inputs,
         }
         secure_zero(hk, sizeof hk);
         uint64_t app = title_id & ~0xFFFull;
-        for (auto& n : programs) {
-            if (app && (n->title_id & ~0xFFFull) != app) continue;
-            bool patch = false, sparse = false;
-            for (int i = 0; i < 4; i++)
-                if (n->sec[i].present && n->sec[i].partition() == 0) patch |= n->sec[i].is_patch(), sparse |= n->sec[i].is_sparse();
-            if (patch) continue;  // an update: the base game only
-            if (sparse) fail("%s holds only part of the game (an update-split title): not supported", n->name.c_str());
-            if (im.base) fail("several games in the files given (%s, %s)", tid_str(im.base->title_id).c_str(), tid_str(n->title_id).c_str());
-            im.base = std::move(n);
+        if (!app) {
+            std::set<uint64_t> titles;
+            for (const auto& n : programs) titles.insert(n->title_id & ~0xFFFull);
+            if (titles.size() != 1) fail(titles.empty() ? "no game program found" : "several games found; specify a title ID");
+            app = *titles.begin();
         }
-        if (!im.base) fail(app ? "the files hold no base game of title %s" : "no base game found", tid_str(app).c_str());
+        for (auto& n : programs) {
+            if ((n->title_id & ~0xFFFull) != app) continue;
+            bool patch = false;
+            for (int i = 0; i < 4; i++)
+                if (n->sec[i].present && n->sec[i].partition() == 0) patch |= n->sec[i].is_patch();
+            if (patch) {
+                if (im.patch) fail("multiple matching updates found; provide only one update");
+                im.patch = n.get();
+            } else {
+                if (im.base) fail("multiple matching base programs found");
+                im.base = n.get();
+            }
+        }
+        if (!im.base) fail("base game for title %s was not found", tid_str(app).c_str());
+        im.ncas = std::move(programs);
         Nca& b = *im.base;
         if (!b.key_ok) fail("%s: %s", b.name.c_str(), b.key_problem.c_str());
         im.title = b.title_id;
 
-        // ExeFS, checked block by block against its hash table (as the import does)
+        // Resolve the base RomFS, including sparse sections whose missing ranges are supplied by BKTR.
+        int base_romfs = -1;
+        for (int i = 0; i < 4 && base_romfs < 0; i++)
+            if (b.sec[i].present && b.sec[i].partition() == 0) base_romfs = i;
+        if (base_romfs < 0) fail("%s has no RomFS", b.name.c_str());
+        Storage* base_storage = b.sec[base_romfs].is_sparse() ? sparse_section(b, base_romfs) : plain_section(b, base_romfs);
+        im.romfs = base_storage;
+        int active_romfs_sec = base_romfs;
+        if (im.patch) {
+            if (!im.patch->key_ok) fail("%s: %s", im.patch->name.c_str(), im.patch->key_problem.c_str());
+            int patch_romfs = -1;
+            for (int i = 0; i < 4 && patch_romfs < 0; i++)
+                if (im.patch->sec[i].present && im.patch->sec[i].partition() == 0 && im.patch->sec[i].is_patch()) patch_romfs = i;
+            if (patch_romfs < 0) fail("%s has no BKTR patch RomFS", im.patch->name.c_str());
+            active_romfs_sec = patch_romfs;
+            im.romfs = patched_section(*im.patch, patch_romfs, base_storage);
+        }
+
+        // ExeFS, checked block by block against its hash table (as the importer does); prefer update ExeFS.
+        Nca* exe_nca = im.patch ? im.patch : &b;
         int exe_sec = -1;
         for (int i = 0; i < 4 && exe_sec < 0; i++)
-            if (b.sec[i].present && b.sec[i].partition() == 1) exe_sec = i;
-        if (exe_sec < 0) fail("%s has no ExeFS", b.name.c_str());
-        Storage* exe = plain_section(b, exe_sec);
-        const uint8_t* efs = b.sec[exe_sec].fs;
+            if (exe_nca->sec[i].present && exe_nca->sec[i].partition() == 1) exe_sec = i;
+        if (exe_sec < 0 && exe_nca != &b) {
+            exe_nca = &b;
+            for (int i = 0; i < 4 && exe_sec < 0; i++)
+                if (exe_nca->sec[i].present && exe_nca->sec[i].partition() == 1) exe_sec = i;
+        }
+        if (exe_sec < 0) fail("%s has no ExeFS", exe_nca->name.c_str());
+        Storage* exe = plain_section(*exe_nca, exe_sec);
+        const uint8_t* efs = exe_nca->sec[exe_sec].fs;
         uint32_t pfs_bs = rd32(efs + 0x28);
         uint64_t ht_off = rd64(efs + 0x30), ht_size = rd64(efs + 0x38), pfs_off = rd64(efs + 0x40), pfs_size = rd64(efs + 0x48);
         if (!pfs_bs || ht_size > (64u << 20) || pfs_size > (1ull << 31)) fail("%s: implausible ExeFS layout", b.name.c_str());
@@ -1638,19 +1734,16 @@ std::unique_ptr<GameImage> GameImage::open(const std::vector<InputFile>& inputs,
             mem.read(f.off, out.data(), out.size());
         }
 
-        // RomFS: the IVFC data level, its header and tables (read once; the files are read on demand)
-        for (int i = 0; i < 4 && im.sec < 0; i++)
-            if (b.sec[i].present && b.sec[i].partition() == 0) im.sec = i;
-        if (im.sec < 0) fail("%s has no RomFS", b.name.c_str());
-        if (b.sec[im.sec].crypt() != 1 && b.sec[im.sec].crypt() != 3 && b.sec[im.sec].crypt() != 4)
-            fail("%s: RomFS encryption type %d is not handled", b.name.c_str(), b.sec[im.sec].crypt());
-        const uint8_t* iv = b.sec[im.sec].fs + 0x8;
+        // RomFS: the resolved base + optional BKTR overlay; the IVFC data level and tables are read once.
+        im.sec = active_romfs_sec;
+        const Nca& romfs_nca = im.patch ? *im.patch : b;
+        const uint8_t* iv = romfs_nca.sec[active_romfs_sec].fs + 0x8;
         if (rd32(iv) != 0x43465649) fail("%s: RomFS section without an IVFC header", b.name.c_str());
         uint32_t levels = rd32(iv + 0xC);
         if (levels < 2 || levels > 7) fail("%s: IVFC with %u levels", b.name.c_str(), levels);
         const uint8_t* lv = iv + 0x10 + 0x18 * (levels - 2);
         im.level_off = rd64(lv), im.level_size = rd64(lv + 8);
-        if (im.level_off + im.level_size > b.sec[im.sec].size) fail("%s: RomFS lies outside its section", b.name.c_str());
+        if (im.level_off + im.level_size > romfs_nca.sec[im.sec].size) fail("%s: RomFS lies outside its section", romfs_nca.name.c_str());
         uint8_t rh[0x50];
         im.read_section(im.level_off, rh, sizeof rh);
         uint64_t dir_off = rd64(rh + 0x18), dir_size = rd64(rh + 0x20), file_off = rd64(rh + 0x38), file_size = rd64(rh + 0x40);

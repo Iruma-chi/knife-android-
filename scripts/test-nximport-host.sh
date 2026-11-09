@@ -6,6 +6,6 @@ TEST="$ROOT/app/src/test/cpp/nximport_test.cpp"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 "${CXX:-g++}" -std=c++20 -O2 -Wall -Wextra -Wpedantic \
-  -I "$IMPORTER" "$TEST" "$IMPORTER/nximport.cpp" "$IMPORTER/nxcrypto.cpp" \
+  -I "$IMPORTER" "$TEST" "$IMPORTER/nximport.cpp" "$IMPORTER/nxcrypto.cpp" "$IMPORTER/nxgame_c.cpp" \
   -o "$TMP/nximport_test"
 "$TMP/nximport_test"

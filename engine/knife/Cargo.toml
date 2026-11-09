@@ -11,6 +11,9 @@ name = "main"
 path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
+[build-dependencies]
+cc = "1.8.0"
+
 [dependencies]
 knife-core = { path = "../knife-core" }
 knife-render = { path = "../knife-render" }

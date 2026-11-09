@@ -7,6 +7,10 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Bundle
+import android.net.Uri
+import android.os.ParcelFileDescriptor
+import android.system.Os
+import android.system.OsConstants
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -83,8 +87,66 @@ class GameActivity : AndroidGameActivity() {
         }
     }
 
+    private var packageOpenError: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Configure the native package reader before GameActivity starts Winit's android_main thread.
+        // The C++/Rust reader duplicates every descriptor synchronously, so these may close afterwards.
+        val packageUris = intent.getStringArrayListExtra("package_uris")
+        val packageNames = intent.getStringArrayListExtra("package_names")
+        if (!packageUris.isNullOrEmpty() && packageNames != null && packageNames.size == packageUris.size) {
+            val descriptors = mutableListOf<ParcelFileDescriptor>()
+            try {
+                System.loadLibrary("main")
+                // Keep the extraction importer and package JNI bridge separate. The latter
+                // links one-way against libmain, which owns the package reader C ABI.
+                System.loadLibrary("nximport")
+                System.loadLibrary("packagejni")
+                nativeClearPackage()
+                val fds = IntArray(packageUris.size)
+                for (index in packageUris.indices) {
+                    val descriptor = contentResolver.openFileDescriptor(Uri.parse(packageUris[index]), "r")
+                        ?: error("Android could not open ${packageNames[index]}.")
+                    try {
+                        require(descriptor.statSize > 0L) { "${packageNames[index]} is not a seekable local file." }
+                        Os.lseek(descriptor.fileDescriptor, 0L, OsConstants.SEEK_CUR)
+                        descriptors += descriptor
+                        fds[index] = descriptor.fd
+                    } catch (failure: Exception) {
+                        descriptor.close()
+                        throw failure
+                    }
+                }
+                packageOpenError = nativeOpenPackage(packageNames.toTypedArray(), fds)
+            } catch (error: Exception) {
+                packageOpenError = error.message ?: "Could not open the selected NSP/XCI package."
+            } catch (error: LinkageError) {
+                packageOpenError = "The direct package reader is unavailable in this build."
+            } finally {
+                descriptors.forEach { runCatching { it.close() } }
+            }
+        } else {
+            try {
+                System.loadLibrary("main")
+                // Keep the extraction importer and package JNI bridge separate. The latter
+                // links one-way against libmain, which owns the package reader C ABI.
+                System.loadLibrary("nximport")
+                System.loadLibrary("packagejni")
+                nativeClearPackage()
+            } catch (error: LinkageError) {
+                packageOpenError = "The native game engine is unavailable in this build."
+            } catch (error: Exception) {
+                packageOpenError = error.message ?: "Could not initialize the native game engine."
+            }
+        }
         super.onCreate(savedInstanceState)
+        packageOpenError?.let { message ->
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                AlertDialog.Builder(this).setTitle("Could not open game package")
+                    .setMessage(message).setPositiveButton("RETURN TO LAUNCHER") { _, _ -> finish() }
+                    .setOnCancelListener { finish() }.show()
+            }
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_FULLSCREEN or
@@ -548,6 +610,12 @@ class GameActivity : AndroidGameActivity() {
     private fun sendControl(action: Int) {
         nativeControl(action)
     }
+
+    @Keep
+    private external fun nativeOpenPackage(names: Array<String>, descriptors: IntArray): String?
+
+    @Keep
+    private external fun nativeClearPackage()
 
     @Keep
     private external fun nativeControl(action: Int)

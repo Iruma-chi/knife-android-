@@ -19,6 +19,7 @@ use knife_core::{
         sfnt,
     },
     vm::parse::Scene,
+    storage::{FileReadAt, ReadAt},
 };
 use knife_render::{Renderer, TexRef, Upload};
 
@@ -95,19 +96,128 @@ const UPLOADS_PER_FRAME: usize = 2;
 pub struct Roots {
     pub base: PathBuf,
     pub mods: Option<PathBuf>,
+    /// Optional in-place package source. Mods on disk continue to take precedence.
+    #[cfg(target_os = "android")]
+    pub package: Option<Arc<crate::package_reader::PackageImage>>,
 }
 
 impl Roots {
-    /// The file at `rel`: the mod folder's when it has one, else the game data's.
+    /// Resolve a path-based consumer. Package files are materialized individually into a private cache;
+    /// archive and metadata readers should use `open_reader` to stay fully in-place.
     pub fn path(&self, rel: impl AsRef<Path>) -> PathBuf {
         let rel = rel.as_ref();
-        self.mods.as_ref().map(|m| m.join(rel)).filter(|p| p.is_file()).unwrap_or_else(|| self.base.join(rel))
+        if let Some(path) = self.mods.as_ref().map(|mods| mods.join(rel)).filter(|path| path.is_file()) {
+            return path;
+        }
+        #[cfg(target_os = "android")]
+        if let Some(package) = &self.package {
+            let safe = rel.components().all(|part| matches!(part, std::path::Component::Normal(_)));
+            if safe {
+                if let Ok(Some(source)) = package.try_file(&rel.to_string_lossy()) {
+                    let destination = self.base.join(".tsuki-package-cache").join(package.cache_id().to_string()).join(rel);
+                    let valid_cached = std::fs::metadata(&destination).ok().is_some_and(|m| m.is_file() && m.len() == source.len());
+                    if valid_cached { return destination; }
+                    if let Some(parent) = destination.parent() {
+                        if std::fs::create_dir_all(parent).is_ok() {
+                            static NEXT_TEMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                            let temp = destination.with_extension(format!("tmp-{}-{}", std::process::id(), NEXT_TEMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+                            let copied = (|| -> std::io::Result<()> {
+                                use std::io::Write;
+                                let mut output = std::fs::File::create(&temp)?;
+                                let mut offset = 0u64;
+                                let mut chunk = vec![0u8; 1024 * 1024];
+                                while offset < source.len() {
+                                    let count = usize::try_from((source.len() - offset).min(chunk.len() as u64)).unwrap();
+                                    source.read_at(offset, &mut chunk[..count])?;
+                                    output.write_all(&chunk[..count])?;
+                                    offset += count as u64;
+                                }
+                                output.sync_all()?;
+                                std::fs::rename(&temp, &destination)?;
+                                Ok(())
+                            })();
+                            if copied.is_err() { let _ = std::fs::remove_file(&temp); }
+                            else { return destination; }
+                        }
+                    }
+                }
+            }
+        }
+        self.base.join(rel)
     }
 
-    /// Archive `base`, each of its files from either folder (`path`).
-    pub fn archive(&self, base: &str) -> Result<Archive> {
-        Archive::open_with(base, |file| self.path(file))
+    /// Immediate files in a game-data directory, preserving mod > package > extracted precedence.
+    pub fn list_files(&self, rel: &str) -> Vec<PathBuf> {
+        if let Some(mods) = &self.mods {
+            let directory = mods.join(rel);
+            if directory.is_dir() {
+                let mut files: Vec<_> = std::fs::read_dir(directory).ok().into_iter().flatten()
+                    .filter_map(|entry| entry.ok()).map(|entry| entry.path()).filter(|path| path.is_file()).collect();
+                files.sort();
+                if !files.is_empty() { return files; }
+            }
+        }
+        #[cfg(target_os = "android")]
+        if let Some(package) = &self.package {
+            if let Ok(children) = package.list(rel) {
+                let mut files: Vec<_> = children.into_iter().filter(|(_, is_dir)| !*is_dir)
+                    .map(|(name, _)| self.path(Path::new(rel).join(name))).collect();
+                files.sort();
+                if !files.is_empty() { return files; }
+            }
+        }
+        let directory = self.base.join(rel);
+        let mut files: Vec<_> = std::fs::read_dir(directory).ok().into_iter().flatten()
+            .filter_map(|entry| entry.ok()).map(|entry| entry.path()).filter(|path| path.is_file()).collect();
+        files.sort();
+        files
     }
+
+    pub fn detect_build(&self) -> Build {
+        #[cfg(target_os = "android")]
+        if let Some(package) = &self.package {
+            if package.try_file("w_allpac.nam").ok().flatten().is_some() { return Build::Overseas; }
+            if package.try_file("jallpac.nam").ok().flatten().is_some() { return Build::Witch; }
+            return Build::Japanese;
+        }
+        detect_build(&self.base)
+    }
+
+    /// Open one game-data file from mods, then the package image, then the extracted folder.
+    pub fn open_reader(&self, rel: &str) -> Result<Arc<dyn ReadAt>> {
+        if let Some(mods) = &self.mods {
+            let path = mods.join(rel);
+            if path.is_file() {
+                return Ok(Arc::new(FileReadAt::open(&path).with_context(|| format!("opening mod asset {}", path.display()))?));
+            }
+        }
+        #[cfg(target_os = "android")]
+        if let Some(package) = &self.package {
+            if let Some(reader) = package.try_file(rel)? {
+                return Ok(reader);
+            }
+        }
+        let path = self.base.join(rel);
+        Ok(Arc::new(FileReadAt::open(&path).with_context(|| format!("opening game asset {}", path.display()))?))
+    }
+
+    /// Read a metadata asset fully. Large archives remain random-access through `archive`.
+    pub fn read_file(&self, rel: &str) -> Result<Vec<u8>> {
+        let source = self.open_reader(rel)?;
+        let len = usize::try_from(source.len()).context("game asset is too large to load into memory")?;
+        let mut bytes = vec![0; len];
+        source.read_at(0, &mut bytes).with_context(|| format!("reading game asset {rel}"))?;
+        Ok(bytes)
+    }
+
+    /// Archive `base`, with metadata and data sourced from mods, package RomFS, or extracted files.
+    pub fn archive(&self, base: &str) -> Result<Archive> {
+        Archive::open_with_reader(base, |file| PathBuf::from(file), |path| {
+            let rel = path.file_name().and_then(|name| name.to_str()).context("invalid archive filename")?;
+            self.open_reader(rel)
+        })
+    }
+
 }
 
 pub struct Assets {
@@ -268,10 +378,10 @@ impl Assets {
             .enumerate()
             .map(|(i, im)| (im.name.to_ascii_uppercase(), i))
             .collect();
-        let scenes = SceneArchive::parse(&std::fs::read(roots.path("allscr.mrg")).context("reading allscr.mrg")?)?;
-        let script_text = std::fs::read(roots.path("script_text.mrg")).context("reading script_text.mrg")?;
+        let scenes = SceneArchive::parse(&roots.read_file("allscr.mrg").context("reading allscr.mrg")?)?;
+        let script_text = roots.read_file("script_text.mrg").context("reading script_text.mrg")?;
         let sar_name = if build == Build::Witch { "witch.bfsar" } else { "knife1.bfsar" };
-        let sar = SoundArchive::parse(std::fs::read(roots.path(sar_name)).with_context(|| format!("reading {sar_name}"))?)?;
+        let sar = SoundArchive::parse(roots.read_file(sar_name).with_context(|| format!("reading {sar_name}"))?)?;
         let allui = Arc::new(roots.archive(&w("allui"))?);
         let languages = Self::sysmes_file(&allui, build).map_or(1, |d| sysmes_u32(&d, 0).unwrap_or(1).max(1) as usize);
         let mut a = Self {
@@ -862,13 +972,7 @@ impl Assets {
     /// game data's.
     pub fn font_path(&self, suffix: &str) -> Option<PathBuf> {
         let rel = format!("{}{suffix}", self.language_folder());
-        let first = |dir: PathBuf| {
-            let mut files: Vec<PathBuf> =
-                std::fs::read_dir(&dir).ok()?.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_file()).collect();
-            files.sort();
-            files.into_iter().next()
-        };
-        self.roots.mods.as_ref().and_then(|m| first(m.join(&rel))).or_else(|| first(self.roots.base.join(&rel)))
+        self.roots.list_files(&rel).into_iter().next()
     }
 
     /// Which places of the language's font list have an OTF kerning table (`FontAtlas::set_otf_kerning`): the

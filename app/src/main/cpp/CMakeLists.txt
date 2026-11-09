@@ -40,3 +40,25 @@ endif()
 
 find_library(ANDROID_LOG_LIB log REQUIRED)
 target_link_libraries(nximport PRIVATE ${ANDROID_LOG_LIB})
+
+# The package reader's C++ implementation and C ABI are compiled into libmain.so
+# by engine/knife/build.rs. Keep the Android JNI shim in a separate library that
+# depends one-way on libmain.so; never link libmain.so back to libnximport.so.
+if(ANDROID AND CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+    find_library(KNIFE_ENGINE_LIB main
+        PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}"
+        NO_DEFAULT_PATH
+        REQUIRED
+    )
+
+    add_library(packagejni SHARED nximport/package_jni.cpp)
+    target_compile_options(packagejni PRIVATE
+        -O2 -march=armv8-a+crypto -fvisibility=hidden -fexceptions -frtti
+        -Wall -Wextra -Wpedantic
+    )
+    target_link_options(packagejni PRIVATE
+        "-Wl,-z,max-page-size=16384"
+        "-Wl,-z,common-page-size=16384"
+    )
+    target_link_libraries(packagejni PRIVATE "${KNIFE_ENGINE_LIB}")
+endif()

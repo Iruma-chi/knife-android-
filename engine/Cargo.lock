@@ -1470,6 +1470,7 @@ dependencies = [
 name = "knife"
 version = "0.9.10"
 dependencies = [
+ "cc",
  "ab_glyph",
  "anyhow",
  "chrono",

@@ -16,6 +16,8 @@ mod save;
 mod save_tables;
 mod savedata;
 mod movie;
+#[cfg(target_os = "android")]
+pub mod package_reader;
 mod sound;
 mod stage;
 mod text;
@@ -402,13 +404,18 @@ impl App {
         let mut renderer = Renderer::new(window.clone(), size.width.max(1), size.height.max(1))?;
         // --shots renders at the Switch's 1920x1080, for the pixel comparisons with its captures
         renderer.set_follow_window(self.cli.shots.is_none());
-        let roots = assets::Roots { base: self.cli.assets_dir(), mods: self.cli.mod_assets_dir() };
+        let roots = assets::Roots {
+            base: self.cli.assets_dir(),
+            mods: self.cli.mod_assets_dir(),
+            #[cfg(target_os = "android")]
+            package: package_reader::current(),
+        };
         if let Some(mods) = &roots.mods {
             tracing::info!("Using mod assets in {}", mods.display());
         } else if let Some(dir) = &self.cli.mod_assets_dir {
             tracing::warn!("mod assets folder {} not found", dir.display());
         }
-        let nso = assets::exe_tables(assets::detect_build(&roots.base))?;
+        let nso = assets::exe_tables(roots.detect_build())?;
         let language = savedata::SaveFile::load().language();
         let assets = assets::Assets::open(&roots, &nso, language)?;
         match assets.soft_lut_rows() {
@@ -941,7 +948,25 @@ fn init_logging() {
 }
 
 /// Configure build detection, save location and language before creating the game.
-fn configure_engine(cli: &Cli, android_data: Option<&std::path::Path>) -> Result<()> {
+fn configure_engine(
+    cli: &Cli,
+    android_data: Option<&std::path::Path>,
+    #[cfg(target_os = "android")] package: Option<&Arc<package_reader::PackageImage>>,
+    #[cfg(not(target_os = "android"))] _package: Option<&Arc<()>>,
+) -> Result<()> {
+    #[cfg(target_os = "android")]
+    let build = if let Some(package) = package {
+        if package.try_file("w_allpac.nam")?.is_some() {
+            knife_core::exe::Build::Overseas
+        } else if package.try_file("jallpac.nam")?.is_some() {
+            knife_core::exe::Build::Witch
+        } else {
+            knife_core::exe::Build::Japanese
+        }
+    } else {
+        assets::detect_build(&cli.assets_dir())
+    };
+    #[cfg(not(target_os = "android"))]
     let build = assets::detect_build(&cli.assets_dir());
     assets::select_build(build);
     if cli.tsukihimates {
@@ -1012,7 +1037,7 @@ pub fn run_desktop() -> Result<()> {
     init_logging();
     // knife.ini fills the options the command line leaves out.
     let cli = Cli::parse_from(ini::merged_args());
-    configure_engine(&cli, None)?;
+    configure_engine(&cli, None, None)?;
     let el = EventLoop::<AndroidControlEvent>::with_user_event().build()?;
     run_event_loop(cli, el)
 }
@@ -1037,7 +1062,8 @@ fn android_main(android_app: AndroidApp) {
             std::ffi::OsString::from("--assets-dir"),
             assets_path.into_os_string(),
         ])?;
-        configure_engine(&cli, Some(&data_dir))?;
+        let package = package_reader::current();
+        configure_engine(&cli, Some(&data_dir), package.as_ref())?;
 
         let mut builder = EventLoop::<AndroidControlEvent>::with_user_event();
         builder.with_android_app(android_app.clone());

@@ -12,27 +12,25 @@ gameplay controls, backlog arrows, opacity settings, save/load bridge and save-b
 - ABI: `arm64-v8a`
 - Release APK: unsigned; sign locally with your private Termux key.
 
-## Launcher import
+## NSP/XCI access
 
-The launcher accepts one base NSP/XCI and optionally one matching update package, including
-split XCI parts. It also asks for `prod.keys`, optional `title.keys`, and the shared system font
+The launcher accepts a legally dumped base NSP/XCI, optional matching update package or split
+parts, `prod.keys`, optional `title.keys`, and the Switch shared system font
 `nintendo_udsg-r_std_003.bfttf`.
 
-The native importer reads the selected packages through SAF file descriptors, decrypts and
-verifies Switch content, applies a matching BKTR update patch when supplied, and extracts
-RomFS into an app-private staging directory. A separate verify-only pass checks the extracted
-outputs against the importer's CRC journal. The launcher validates core archives, scripts,
-sound data and the font before switching the active RomFS path.
+The source now includes a package-first route: SAF opens the selected files, JNI passes duplicated
+file descriptors to the native RomFS reader, and the Rust Knife engine reads assets on demand.
+Archives and scripts use random-access package reads; path-only media consumers lazily cache only
+the individual requested file. The existing verified extraction importer remains available as a
+fallback. No full RomFS extraction is required by the direct route.
 
-The original NSP/XCI and key files are not modified. Keys are not stored or transmitted.
-DLC and optional Chinese system fonts are not included in this first importer milestone.
+The original NSP/XCI and key files are not modified. Keys are not stored or transmitted. DLC and
+real-device update-overlay behavior remain unverified.
 
 ## Gameplay preservation
 
-`GameActivity.kt`, `SaveBackupManager.kt`, and every file under `engine/` are byte-for-byte
-identical to the supplied 0.1.5 source. Only the launcher and build/import integration changed.
-Knife's WGPU renderer and WGSL shaders remain in place; there is no Maxwell shader translation
-or Switch executable emulation in this architecture.
+The existing Knife WGPU renderer, controls, save/load behavior and save-backup UI are retained.
+There is no Maxwell shader translation or Switch executable emulation in this architecture.
 
 ## Build and signing
 
@@ -43,7 +41,7 @@ sign the APK locally.
 
 ## Verification status
 
-Host C++ importer tests and a host CMake/JNI build pass. XML, TOML, YAML and shell syntax checks
-pass. The full Gradle/Android NDK/Rust build could not run in the current environment because
-Gradle's distribution server could not be resolved and the Android SDK/NDK and Rust toolchain
-are not installed here. A real Tsukihime package import and gameplay test remain pending.
+Host importer tests, strict GCC/Clang C++ checks, UBSan and a host compile of the JNI shim pass.
+The pinned Rust toolchain and Android SDK/NDK are not installed in the current environment, so
+Rust compilation, Android linking and APK packaging remain pending. A real Tsukihime package
+import and direct-mode gameplay test also remain pending.

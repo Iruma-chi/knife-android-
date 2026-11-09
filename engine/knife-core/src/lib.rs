@@ -7,3 +7,4 @@ pub mod kinsoku;
 pub mod linebreak;
 pub mod par;
 pub mod vm;
+pub mod storage;

@@ -35,7 +35,8 @@ surfaced by this first launcher build.
 ## Native components
 
 - `libmain.so`: the existing Rust Knife engine, built for `arm64-v8a` with `cargo-ndk`.
-- `libnximport.so`: the C++ NSP/XCI importer and JNI bridge, built with Android NDK CMake.
+- `libnximport.so`: the C++ extraction importer and its JNI bridge, built with Android NDK CMake.
+- `libpackagejni.so`: the direct-package JNI bridge, linked one-way against `libmain.so`; the native package reader C ABI is compiled into `libmain.so`.
 - `nximport.cpp` and `nxcrypto.cpp`: adapted from the MIT-licensed P5R Android importer.
 - `nximport_jni.cpp`: package-renamed JNI bridge for `com.dev.tsukihimeandroid.NativeImporter`.
 
