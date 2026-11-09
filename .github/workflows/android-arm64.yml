@@ -65,12 +65,38 @@ jobs:
           python3 scripts/check-elf-page-alignment.py app/build/outputs/apk/release/app-release-unsigned.apk \
             --readelf "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
 
-      - name: Rename unsigned APK
+
+
+      - name: Sign and verify TsukiPort APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
+          set -euo pipefail
+
+          KEYSTORE_PATH="$RUNNER_TEMP/tsukiport-release.jks"
+          trap 'rm -f "$KEYSTORE_PATH"' EXIT
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release-unsigned.apk dist/TsukiPort-0.3.0-dev-arm64-unsigned.apk
+
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+            --ks "$KEYSTORE_PATH" \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --key-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --out dist/TsukiPort-0.3.0-dev-arm64-signed.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk
+
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify \
+            --verbose \
+            --print-certs \
+            dist/TsukiPort-0.3.0-dev-arm64-signed.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: TsukiPort-0.3.0-dev-arm64-unsigned
-          path: dist/TsukiPort-0.3.0-dev-arm64-unsigned.apk
+          name: TsukiPort-0.3.0-dev-arm64-signed
+          path: dist/TsukiPort-0.3.0-dev-arm64-signed.apk
